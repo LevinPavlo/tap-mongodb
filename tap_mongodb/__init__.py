@@ -216,9 +216,7 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
     for step in range(steps):
         start = step * STEP_LIMIT
         stop = (step + 1) * STEP_LIMIT
-        if stop > document_count:
-            stop = document_count
-        documents = collection.find({})[start:stop]
+        documents = collection.find().skip(start).limit(STEP_LIMIT)
         scan_count = stop
         logger.info('Step %s of %s for collection %s --- %s seconds ---', step, steps,
                     collection.name, time.time() - start_time)

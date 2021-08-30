@@ -199,44 +199,44 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
     # count is deprecated  DEPRECATED -> could use count_documents({}), but is very slow
     document_count = collection.estimated_document_count()
     collection_schema['count'] = document_count
-    # if sample_size:
-    #     documents = collection.aggregate([{'$sample': {'size': sample_size}}], allowDiskUse=True)
-    # else:
-    #     documents = collection.find({})
+    if sample_size:
+        documents = collection.aggregate([{'$sample': {'size': sample_size}}], allowDiskUse=True)
+    else:
+        documents = collection.find({}).limit(1000)
 
-    # TODO: there are 2 ways to solve large documents data reads per collection
-    # 1. with python multi-threads - run in parallel
-    # 2. with slice indexes containing a limit and skip
-    # The second is implemented. TO check the performance!
+    # # TODO: there are 2 ways to solve large documents data reads per collection
+    # # 1. with python multi-threads - run in parallel
+    # # 2. with slice indexes containing a limit and skip
+    # # The second is implemented. TO check the performance!
+    #
+    # # get a slice of documents
+    # steps = int(round(document_count / STEP_LIMIT)) + 1
+    # logger.info('Total number of steps %s', steps)
+    # start_time = time.time()
+    # for step in range(steps):
+    #     start = step * STEP_LIMIT
+    #     stop = (step + 1) * STEP_LIMIT
+    #     documents = collection.find().skip(start).limit(STEP_LIMIT)
+    #     scan_count = stop
+    #     logger.info('Step %s of %s for collection %s --- %s seconds ---', step, steps,
+    #                 collection.name, time.time() - start_time)
 
-    # get a slice of documents
-    steps = int(round(document_count / STEP_LIMIT)) + 1
-    logger.info('Total number of steps %s', steps)
-    start_time = time.time()
-    for step in range(steps):
-        start = step * STEP_LIMIT
-        stop = (step + 1) * STEP_LIMIT
-        documents = collection.find().skip(start).limit(STEP_LIMIT)
-        scan_count = stop
-        logger.info('Step %s of %s for collection %s --- %s seconds ---', step, steps,
-                    collection.name, time.time() - start_time)
+    i = 0
+    while True:
+        try:
+            # Iterate over documents per step
+            document = next(documents)
+        except StopIteration:
+            break
+        except errors.InvalidBSON as err:
+            logger.warning("ignore invalid record: {}".format(str(err)))
+            continue
 
-        i = 0
-        while True:
-            try:
-                # Iterate over documents per step
-                document = next(documents)
-            except StopIteration:
-                break
-            except errors.InvalidBSON as err:
-                logger.warning("ignore invalid record: {}".format(str(err)))
-                continue
-
-            extract.add_document_to_object_schema(document, collection_schema['object'])
-            i += 1
-            if i == stop:
-                logger.info('Scanned %s documents out of %s (%.2f %%) in step %s', i, scan_count,
-                            (100. * i) / scan_count, step)
+        extract.add_document_to_object_schema(document, collection_schema['object'])
+        i += 1
+        if i == document_count:
+            logger.info('Scanned %s documents out of %s (%.2f %%)', i, document_count,
+                        (100. * i) / document_count)
 
     logger.info('FInished scanning documents of collection %s', collection.name)
     extract.post_process_schema(collection_schema)

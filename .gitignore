@@ -108,3 +108,4 @@ state.json
 properties.json
 catalog.json
 .idea
+.DS_Store

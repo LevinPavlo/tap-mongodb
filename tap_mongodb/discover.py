@@ -1,7 +1,6 @@
 # Discovery method
 import json
 import logging
-import threading
 
 import sys
 from concurrent.futures import ThreadPoolExecutor

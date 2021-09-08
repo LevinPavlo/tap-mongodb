@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-import singer
 from tap_mongodb.connection import get_client
-
 from tap_mongodb.discover import do_discover
 from tap_mongodb.sync import do_sync
 import tap_mongodb.sync_strategies.common as common
 import tap_mongodb.sync_strategies.full_table as full_table
 import tap_mongodb.sync_strategies.oplog as oplog
 import tap_mongodb.sync_strategies.incremental as incremental
+import singer
 from singer import utils
+import json
+import sys
 
 LOGGER = singer.get_logger()
 ARGS = utils.parse_args([])
@@ -23,10 +24,15 @@ def main_impl():
         (config.get('include_schemas_in_destination_stream_name') == 'true')
 
     if args.discover:
-        do_discover(client, config)
-    elif args.catalog:
+        catalog = do_discover(client, config, limit=1000)
+        json.dump(catalog, sys.stdout, indent=2)
+    else:
         state = args.state or {}
-        do_sync(client, args.catalog.to_dict(), state)
+        # catalog = args.catalog.to_dict()
+        rediscovered_catalog = do_discover(client, config, limit=None)
+        # full_catalog
+        catalog = singer.catalog.Catalog.from_dict(rediscovered_catalog).to_dict()
+        do_sync(client, catalog, state)
 
 
 def main():

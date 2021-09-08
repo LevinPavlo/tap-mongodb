@@ -1,10 +1,7 @@
 # Discovery method
 import json
 import logging
-
-import sys
 from concurrent.futures import ThreadPoolExecutor
-
 from pymongo.collection import Collection
 from bson import errors
 
@@ -12,6 +9,7 @@ import singer
 from singer import metadata
 from pymongo_schema import extract
 import time
+
 LOGGER = singer.get_logger()
 
 IGNORE_DBS = ['system', 'local', 'config']
@@ -41,11 +39,12 @@ ROLES_WITH_ALL_DB_FIND_PRIVILEGES = {
 STEP_LIMIT = 100000
 
 
-def do_discover(client, config):
+def do_discover(client, config, limit):
     streams = []
-
     db_name = config.get("database")
+    selected_stream = config.get("import")
     filter_collections = config.get("filter_collections", [])
+
     if db_name == "admin":
         databases = get_databases(client, config)
     else:
@@ -61,6 +60,11 @@ def do_discover(client, config):
                     filter_collections and collection_name not in filter_collections):
                 continue
 
+            # rediscover selected streams
+            database_stream = db_name + "-" + collection_name
+            if selected_stream and selected_stream != database_stream:
+                continue
+
             collection = db[collection_name]
             is_view = collection.options().get('viewOn') is not None
             # TODO: Add support for views
@@ -69,10 +73,10 @@ def do_discover(client, config):
 
             LOGGER.info("Getting collection info for db: %s, collection: %s",
                         db_name, collection_name)
-            stream = produce_collection_schema(collection, client)
+            stream = produce_collection_schema(collection, client, limit)
             if stream is not None:
                 streams.append(stream)
-    json.dump({'streams': streams}, sys.stdout, indent=2)
+    return {'streams': streams}
 
 
 def get_databases(client, config):
@@ -85,7 +89,7 @@ def get_databases(client, config):
         db_names = [d for d in client.list_database_names() if d not in IGNORE_DBS]
     else:
         db_names = [r['db'] for r in roles if r['db'] not in IGNORE_DBS]
-    LOGGER.info('Datbases: %s', db_names)
+    LOGGER.info('Databases: %s', db_names)
     return db_names
 
 
@@ -205,7 +209,7 @@ def build_schema_for_level(properties):
     return schema_properties
 
 
-def produce_collection_schema(collection: Collection, client):
+def produce_collection_schema(collection: Collection, client, limit=None):
     collection_name = collection.name
     collection_db_name = collection.database.name
 
@@ -214,14 +218,13 @@ def produce_collection_schema(collection: Collection, client):
     # Analyze and build schema recursively
     # schema = extract_pymongo_client_schema(client, collection_names=collection_name)
     try:
-        schema = _fault_tolerant_extract_collection_schema(collection, sample_size=None)
+        schema = _fault_tolerant_extract_collection_schema(collection, sample_size=limit)
         """
-        TODO: 
         without sample_size it always downloads all data to extract the schema,
         but with it might not get types for all fields and fail writing
 
-        maybe it should load the schema with a sample_size, but in the actual import build the
-        schema message out of all data?
+        Load the schema with a sample_size, but in the actual import build the
+        schema message out of all data
         """
     except errors.InvalidBSON as e:
         logging.warning("ignored db {}.{} due to BSON error: {}".format(
@@ -279,6 +282,8 @@ def produce_collection_schema(collection: Collection, client):
 def _fault_tolerant_extract_collection_schema(collection: Collection, sample_size: int = None):
     """
     @see extract.extract_collection_schema - but catches InvalidBSON errors
+    --on_discover_mode - load sample schema
+    --on_sync_mode - discover & sync stream
 
     multithreads scan documents in slices containing params:
     no_cursor_timeout - relates to idle time, which does not contribute towards its processing time
@@ -298,16 +303,21 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
     collection_schema['count'] = document_count
 
     start_time = time.time()
-    steps = int(round(document_count / STEP_LIMIT)) + 1
-    logger.info('Total steps - %s', steps)
+    if sample_size:
+        cursors = collection.aggregate([{'$sample': {'size': sample_size}}], allowDiskUse=True)
+        scan_documents(cursors, collection_schema, sample_size, 1, 1, document_count, collection.name)
+    else:
+        limit = sample_size and sample_size or STEP_LIMIT
+        steps = int(round(document_count / STEP_LIMIT)) + 1
+        logger.info('Total steps - %s', steps)
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for i in range(steps):
-            start = i * STEP_LIMIT
-            cursors = collection.find(no_cursor_timeout=True, allow_partial_results=True, skip=start, limit=STEP_LIMIT,
-                                      max_time_ms=5000)
-            executor.submit(scan_documents, cursors, collection_schema, STEP_LIMIT, i, steps, document_count,
-                            collection.name)
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for i in range(steps):
+                start = i * limit
+                cursors = collection.find(no_cursor_timeout=True, allow_partial_results=True, skip=start, limit=limit,
+                                          max_time_ms=5000)
+                executor.submit(scan_documents, cursors, collection_schema, STEP_LIMIT, i, steps, document_count,
+                                collection.name)
 
     end_time = time.time() - start_time
     logger.info('Collection %s scanned for - %s', collection.name, int(round(end_time, 2)))

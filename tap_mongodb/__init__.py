@@ -28,11 +28,32 @@ def main_impl():
         json.dump(catalog, sys.stdout, indent=2)
     else:
         state = args.state or {}
-        # catalog = args.catalog.to_dict()
+        # merge dictionaries to get selected streams and replication method
+        catalog = args.catalog.to_dict()
         rediscovered_catalog = do_discover(client, config, limit=None)
-        # full_catalog
-        catalog = singer.catalog.Catalog.from_dict(rediscovered_catalog).to_dict()
-        do_sync(client, catalog, state)
+        full_catalog = get_full_catalog(catalog, rediscovered_catalog)
+        do_sync(client, full_catalog, state)
+
+
+def get_full_catalog(sample_catalog, rediscovered_catalog):
+    """
+        Update rediscovered catalog with 'selected' and 'replication-method' info
+    """
+    replication_method_list = []
+    for rediscovered_stream in rediscovered_catalog.get("streams", []):
+        match_stream = [s for s in sample_catalog["streams"] if
+                        s["tap_stream_id"] == rediscovered_stream["tap_stream_id"]]
+        if match_stream:
+            metadata = [m for m in match_stream[0].get("metadata", [])]
+            replication_method_list = [r["metadata"].get("replication-method", False) for r in metadata if
+                                       r["metadata"].get("replication-method", False)]
+        replication_method = replication_method_list and replication_method_list[0] or "FULL_TABLE"
+        for rediscovered_metadata in rediscovered_stream["metadata"]:
+            if rediscovered_metadata["metadata"].get("table-key-properties", False):
+                # insert replication method
+                rediscovered_metadata["metadata"]["replication-method"] = replication_method
+            rediscovered_metadata["metadata"]["selected"] = True
+    return rediscovered_catalog
 
 
 def main():

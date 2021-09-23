@@ -1,11 +1,8 @@
 # Discovery method
+import copy
 import json
 import logging
-import threading
-
-import sys
 from concurrent.futures import ThreadPoolExecutor
-
 from pymongo.collection import Collection
 from bson import errors
 
@@ -13,6 +10,7 @@ import singer
 from singer import metadata
 from pymongo_schema import extract
 import time
+
 LOGGER = singer.get_logger()
 
 IGNORE_DBS = ['system', 'local', 'config']
@@ -42,11 +40,12 @@ ROLES_WITH_ALL_DB_FIND_PRIVILEGES = {
 STEP_LIMIT = 100000
 
 
-def do_discover(client, config):
+def do_discover(client, config, limit):
     streams = []
-
     db_name = config.get("database")
+    selected_stream = config.get("import")
     filter_collections = config.get("filter_collections", [])
+
     if db_name == "admin":
         databases = get_databases(client, config)
     else:
@@ -62,7 +61,13 @@ def do_discover(client, config):
                     filter_collections and collection_name not in filter_collections):
                 continue
 
+            # rediscover selected streams
+            database_stream = db_name + "-" + collection_name
+            if selected_stream and selected_stream != database_stream:
+                continue
+
             collection = db[collection_name]
+
             is_view = collection.options().get('viewOn') is not None
             # TODO: Add support for views
             if is_view:
@@ -70,10 +75,11 @@ def do_discover(client, config):
 
             LOGGER.info("Getting collection info for db: %s, collection: %s",
                         db_name, collection_name)
-            stream = produce_collection_schema(collection, client)
+            stream = produce_collection_schema(collection, client, limit)
+            # could return more than one schema per catalog -> parent child splitted
             if stream is not None:
-                streams.append(stream)
-    json.dump({'streams': streams}, sys.stdout, indent=2)
+                streams.extend(stream)
+    return {'streams': streams}
 
 
 def get_databases(client, config):
@@ -86,7 +92,7 @@ def get_databases(client, config):
         db_names = [d for d in client.list_database_names() if d not in IGNORE_DBS]
     else:
         db_names = [r['db'] for r in roles if r['db'] not in IGNORE_DBS]
-    LOGGER.info('Datbases: %s', db_names)
+    LOGGER.info('Databases: %s', db_names)
     return db_names
 
 
@@ -206,23 +212,22 @@ def build_schema_for_level(properties):
     return schema_properties
 
 
-def produce_collection_schema(collection: Collection, client):
+def produce_collection_schema(collection: Collection, client, limit=None):
     collection_name = collection.name
     collection_db_name = collection.database.name
-
+    collection_schemas = []
     is_view = collection.options().get('viewOn') is not None
 
     # Analyze and build schema recursively
     # schema = extract_pymongo_client_schema(client, collection_names=collection_name)
     try:
-        schema = _fault_tolerant_extract_collection_schema(collection, sample_size=None)
+        schemas = _fault_tolerant_extract_collection_schema(collection, sample_size=limit)
         """
-        TODO: 
         without sample_size it always downloads all data to extract the schema,
         but with it might not get types for all fields and fail writing
 
-        maybe it should load the schema with a sample_size, but in the actual import build the
-        schema message out of all data?
+        Load the schema with a sample_size, but in the actual import build the
+        schema message out of all data
         """
     except errors.InvalidBSON as e:
         logging.warning("ignored db {}.{} due to BSON error: {}".format(
@@ -231,21 +236,10 @@ def produce_collection_schema(collection: Collection, client):
             str(e)
         ))
         return None
-    extracted_properties = schema['object']
-    schema_properties = build_schema_for_level(extracted_properties)
-
-    propertiesBreadcrumb = []
-
-    for k in schema_properties:
-        propertiesBreadcrumb.append({
-            "breadcrumb": ["properties", k],
-            "metadata": {"selected-by-default": True}
-        })
 
     mdata = {}
-    mdata = metadata.write(mdata, (), 'table-key-properties', ['_id'])
     mdata = metadata.write(mdata, (), 'database-name', collection_db_name)
-    mdata = metadata.write(mdata, (), 'row-count', collection.estimated_document_count())
+    mdata = metadata.write(mdata, (), 'table-key-properties', ['_id'])
     mdata = metadata.write(mdata, (), 'is-view', is_view)
 
     # write valid-replication-key metadata by finding fields that have indexes on them.
@@ -265,21 +259,44 @@ def produce_collection_schema(collection: Collection, client):
         if valid_replication_keys:
             mdata = metadata.write(mdata, (), 'valid-replication-keys', valid_replication_keys)
 
-    return {
-        'table_name': collection_name,
-        'stream': collection_name,
-        'metadata': metadata.to_list(mdata) + propertiesBreadcrumb,
-        'tap_stream_id': "{}-{}".format(collection_db_name, collection_name),
-        'schema': {
-            'type': 'object',
-            'properties': schema_properties
-        }
-    }
+    for schema in schemas:
+        propertiesBreadcrumb = []
+        extracted_properties = schema['object']
+        schema_properties = build_schema_for_level(extracted_properties)
+
+        # TODO: rowcount for children
+        mdata = metadata.write(mdata, (), 'row-count', collection.estimated_document_count())
+        if schema.get('parent_id', False):
+            mdata = metadata.write(mdata, (), 'table-key-properties', ['parent_id'])
+
+        for k in schema_properties:
+            propertiesBreadcrumb.append({
+                "breadcrumb": ["properties", k],
+                "metadata": {"selected-by-default": True}
+            })
+
+        tap_stream_id = "{}-{}".format(collection_db_name, schema.get('stream', collection_name))
+        # if schema.get('stream', False) != collection_name:
+        #     tap_stream_id = "{}-{}-{}".format(collection_db_name, collection_name, schema['stream'])
+
+        collection_schemas.append({
+            'table_name': collection_name,
+            'stream': schema.get('stream', collection_name),
+            'metadata': metadata.to_list(mdata) + propertiesBreadcrumb,
+            'tap_stream_id': tap_stream_id,
+            'schema': {
+                'type': 'object',
+                'properties': schema_properties
+            }
+        })
+    return collection_schemas
 
 
 def _fault_tolerant_extract_collection_schema(collection: Collection, sample_size: int = None):
     """
     @see extract.extract_collection_schema - but catches InvalidBSON errors
+    --on_discover_mode - load sample schema
+    --on_sync_mode - discover & sync stream
 
     multithreads scan documents in slices containing params:
     no_cursor_timeout - relates to idle time, which does not contribute towards its processing time
@@ -299,24 +316,33 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
     collection_schema['count'] = document_count
 
     start_time = time.time()
-    steps = int(round(document_count / STEP_LIMIT)) + 1
-    logger.info('Total steps - %s', steps)
+    if sample_size:
+        cursors = collection.aggregate([{'$sample': {'size': sample_size}}], allowDiskUse=True)
+        # cursors = collection.aggregate([{'$sample': {'size': { $gt: sample_size}}}], allowDiskUse=True)
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        for i in range(steps):
-            start = i * STEP_LIMIT
-            cursors = collection.find(no_cursor_timeout=True, allow_partial_results=True, skip=start, limit=STEP_LIMIT,
-                                      max_time_ms=5000)
-            executor.submit(scan_documents, cursors, collection_schema, STEP_LIMIT, i, steps, document_count,
-                            collection.name)
+        scan_documents(cursors, collection_schema, sample_size, 1, 1, document_count, collection.name)
+    else:
+        limit = sample_size and sample_size or STEP_LIMIT
+        steps = int(round(document_count / STEP_LIMIT)) + 1
+        logger.info('Total steps - %s', steps)
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            for i in range(steps):
+                start = i * limit
+                cursors = collection.find(no_cursor_timeout=True, allow_partial_results=True, skip=start, limit=limit,
+                                          max_time_ms=5000)
+                executor.submit(scan_documents, cursors, collection_schema, STEP_LIMIT, i, steps, document_count,
+                                collection.name)
 
     end_time = time.time() - start_time
     logger.info('Collection %s scanned for - %s', collection.name, int(round(end_time, 2)))
 
     logger.info('Finished scanning documents of collection %s', collection.name)
     extract.post_process_schema(collection_schema)
+
     collection_schema = extract.recursive_default_to_regular_dict(collection_schema)
-    return collection_schema
+    collection_schemas = split_children(collection.name, collection_schema)
+    return collection_schemas
 
 
 def scan_documents(cursors, collection_schema, limit, step, steps, total, collection_name):
@@ -352,3 +378,27 @@ def process_cursor(documents, schema_object):
 
 def process_document(document, schema_object):
     extract.add_document_to_object_schema(document, schema_object)
+
+
+def split_children(stream, collection_schema):
+    """
+        List of dict schemas: splitted parent-child
+    """
+    schemas = []
+    parent_schema = copy.deepcopy(collection_schema)
+    parent_schema['stream'] = stream
+    parent_object = parent_schema.get('object', False)
+    if parent_object:
+        for k, v in collection_schema['object'].items():
+            child = {'count': 0}
+            if v.get('type', False) == 'OBJECT':
+                child['object'] = v['object']
+                child['object']['parent_id'] = {'type': 'integer'}
+                child['stream'] = k
+                # TODO: add count for children rows
+                # add sub-table as separate schema
+                schemas.append(child)
+                # remove entity from parent
+                parent_object.pop(k)
+    schemas.append(parent_schema)
+    return schemas

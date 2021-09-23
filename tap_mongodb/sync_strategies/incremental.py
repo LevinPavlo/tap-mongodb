@@ -27,18 +27,19 @@ def update_bookmark(row, state, tap_stream_id, replication_key_name):
                                       'replication_key_type',
                                       replication_key_type)
 
+
 # pylint: disable=too-many-locals, too-many-statements
 def sync_collection(client, stream, state, projection):
     tap_stream_id = stream['tap_stream_id']
     LOGGER.info('Starting incremental sync for %s', tap_stream_id)
 
     stream_metadata = metadata.to_map(stream['metadata']).get(())
-    collection = client[stream_metadata['database-name']][stream['stream']]
+    collection = client[stream_metadata['database-name']][stream['table_name']]
 
-    #before writing the table version to state, check if we had one to begin with
+    # before writing the table version to state, check if we had one to begin with
     first_run = singer.get_bookmark(state, stream['tap_stream_id'], 'version') is None
 
-    #pick a new table version if last run wasn't interrupted
+    # pick a new table version if last run wasn't interrupted
     if first_run:
         stream_version = int(time.time() * 1000)
     else:
@@ -54,7 +55,6 @@ def sync_collection(client, stream, state, projection):
         version=stream_version
     )
 
-
     # For the initial replication, emit an ACTIVATE_VERSION message
     # at the beginning so the records show up right away.
     if first_run:
@@ -63,8 +63,15 @@ def sync_collection(client, stream, state, projection):
     # get replication key, and bookmarked value/type
     stream_state = state.get('bookmarks', {}).get(tap_stream_id, {})
 
+    #
     replication_key_name = stream_metadata.get('replication-key')
     replication_key_value_bookmark = stream_state.get('replication_key_value')
+
+    # TODO: child case - increment with parent_id
+    if not replication_key_name:
+        # repliacation_key_name = '_id'
+        # replication_key_value_bookmark['replication_key_name'] = replication_key_name
+        return []
 
     # write state message
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
@@ -82,7 +89,6 @@ def sync_collection(client, stream, state, projection):
     if projection:
         query_message += '\n\tProjection: {}'.format(projection)
     LOGGER.info(query_message)
-
 
     # query collection
     schema = {"type": "object", "properties": {}}
@@ -105,6 +111,7 @@ def sync_collection(client, stream, state, projection):
                 singer.write_message(singer.SchemaMessage(
                     stream=common.calculate_destination_stream_name(stream),
                     schema=schema,
+                    # TODO: - child might not have an '_id', user parent_id instead
                     key_properties=['_id']))
                 common.SCHEMA_COUNT[tap_stream_id] += 1
             common.SCHEMA_TIMES[tap_stream_id] += time.time() - schema_build_start_time

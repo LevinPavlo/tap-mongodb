@@ -31,7 +31,11 @@ def main_impl():
         # merge dictionaries to get selected streams and replication method
         catalog = args.catalog.to_dict()
         rediscovered_catalog = do_discover(client, config, limit=None)
-        full_catalog = get_full_catalog(catalog, rediscovered_catalog)
+        try:
+            full_catalog = get_full_catalog(catalog, rediscovered_catalog)
+        except Exception as e:
+            LOGGER.info(e)
+            pass
         do_sync(client, full_catalog, state)
 
 

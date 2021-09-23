@@ -13,6 +13,7 @@ from bson import errors
 from pprint import pprint
 LOGGER = singer.get_logger()
 
+
 def get_max_id_value(collection):
     row = collection.find_one(sort=[("_id", pymongo.DESCENDING)])
     if row:
@@ -31,7 +32,7 @@ def sync_collection(client, stream, state, projection):
     database_name = metadata.get(md_map, (), 'database-name')
 
     db = client[database_name]
-    collection = db[stream['stream']]
+    collection = db[stream['table_name']]  # 'stream'
 
     #before writing the table version to state, check if we had one to begin with
     first_run = singer.get_bookmark(state, stream['tap_stream_id'], 'version') is None
@@ -106,25 +107,16 @@ def sync_collection(client, stream, state, projection):
     cond = {'_id': find_filter}
     projection = {"details.availability": False}
 
-
-
     rows_saved = 0
     time_extracted = utils.now()
     start_time = time.time()
 
     schema = {"type": "object", "properties": {}}
-    for row in _find_until_complete(collection, cond, projection):
+    for row in _find_until_complete(collection, cond, projection, stream['stream']):
         rows_saved += 1
 
         schema_build_start_time = time.time()
         if common.row_to_schema(schema, row):
-            # This piece of code is commented out because
-            # we don't want multiple SCHEMA messages
-            # being output.
-            #singer.write_message(singer.SchemaMessage(
-            #    stream=common.calculate_destination_stream_name(stream),
-            #    schema=schema,
-            #    key_properties=['_id']))
             common.SCHEMA_COUNT[stream['tap_stream_id']] += 1
         common.SCHEMA_TIMES[stream['tap_stream_id']] += time.time() - schema_build_start_time
 
@@ -135,15 +127,23 @@ def sync_collection(client, stream, state, projection):
 
         singer.write_message(record_message)
 
+        # child entities might not have '_id'
+        if collection.name != stream:
+            row_id = row['parent_id']
+            row_id_type = 'int'
+        else:
+            row_id = row['_id']
+            row_id_type = row['_id'].__class__.__name__
+
         state = singer.write_bookmark(state,
                                       stream['tap_stream_id'],
                                       'last_id_fetched',
-                                      common.class_to_string(row['_id'],
-                                                             row['_id'].__class__.__name__))
+                                      common.class_to_string(row_id,
+                                                             row_id_type))
         state = singer.write_bookmark(state,
                                       stream['tap_stream_id'],
                                       'last_id_fetched_type',
-                                      row['_id'].__class__.__name__)
+                                      row_id_type)
 
 
         if rows_saved % common.UPDATE_BOOKMARK_PERIOD == 0:
@@ -168,7 +168,7 @@ def sync_collection(client, stream, state, projection):
     LOGGER.info('Syncd {} records for {}'.format(rows_saved, tap_stream_id))
 
 
-def _find_until_complete(collection, cond, projection, last_id = None, skip=0):
+def _find_until_complete(collection, cond, projection, stream, last_id=None, skip=0):
     has_error = False
     if last_id is not None:
         cond["_id"]["$gte"] = last_id
@@ -183,6 +183,15 @@ def _find_until_complete(collection, cond, projection, last_id = None, skip=0):
                 row = next(cursor)
                 skip = 0
                 last_id = row.get("_id")
+                # get child && add parent_id
+                if collection.name != stream:
+                    if row.get(stream, False):
+                        child_row = row[stream]
+                        child_row['parent_id'] = last_id
+                        row = child_row
+                    else:
+                        continue
+
                 yield row
             except StopIteration:
                 break
@@ -192,7 +201,14 @@ def _find_until_complete(collection, cond, projection, last_id = None, skip=0):
                 logging.warning("ignored invalid record ({} after id {}): {}".format(str(skip), last_id, str(err)))
                 break
     if has_error:
-        for row in _find_until_complete(collection, cond, projection, last_id, skip):
+        for row in _find_until_complete(collection, cond, projection, stream, last_id, skip):
+            # get child && add parent_id
+            if collection.name != stream:
+                if stream in row:
+                    row[stream]['parent_id'] = row.get("_id")
+                    row = row[stream]
+                else:
+                    continue
             yield row
 
 # https://github.com/yougov/mongo-connector/pull/487/commits/9df97e4083fe4b06aa9569f4a84522bd985a9f30

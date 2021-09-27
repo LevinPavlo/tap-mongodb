@@ -311,7 +311,7 @@ def get_sync_summary(catalog):
     rows = []
     for stream_id, stream_count in COUNTS.items():
         stream = [x for x in catalog['streams'] if x['tap_stream_id'] == stream_id][0]
-        collection_name = stream.get("table_name")
+        collection_name = stream.get("collection")
         md_map = metadata.to_map(stream['metadata'])
         db_name = metadata.get(md_map, (), 'database-name')
         replication_method = metadata.get(md_map, (), 'replication-method')

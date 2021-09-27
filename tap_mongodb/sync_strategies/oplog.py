@@ -110,7 +110,7 @@ def sync_collection(client, stream, state, stream_projection):
 
     md_map = metadata.to_map(stream['metadata'])
     database_name = metadata.get(md_map, (), 'database-name')
-    collection_name = stream.get("table_name")
+    collection_name = stream.get("collection")
     stream_state = state.get('bookmarks', {}).get(tap_stream_id)
 
     oplog_ts = timestamp.Timestamp(stream_state['oplog_ts_time'],

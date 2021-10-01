@@ -37,7 +37,9 @@ ROLES_WITH_ALL_DB_FIND_PRIVILEGES = {
     'readWriteAnyDatabase',
     'root'
 }
-STEP_LIMIT = 100000
+STEP_LIMIT = 10000
+# MAX steps to get data per time, others sync next incremental
+MAX_STEPS = 50
 
 
 def do_discover(client, config, limit):
@@ -332,6 +334,9 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
         limit = sample_size and sample_size or STEP_LIMIT
         steps = int(round(document_count / STEP_LIMIT)) + 1
         logger.info('Total steps - %s', steps)
+        if steps > MAX_STEPS:
+            steps = MAX_STEPS
+            logger.info('Max steps allowed - %s', steps)
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             for i in range(steps):
@@ -362,7 +367,7 @@ def scan_documents(cursors, collection_schema, limit, step, steps, total, collec
     try:
         process_cursor(cursors, collection_schema['object'])
         LOGGER.info('Collection %s - Scanned documents: %s/%s - steps %s/%s',
-                    collection_name, limit * step, total, step, steps)
+                    collection_name, limit_step, total, step, steps)
     except Exception as e:
         # cursor might be not found for different reasons (time out, live change, etc)
         LOGGER.info('Error exception: %s', e)

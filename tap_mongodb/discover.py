@@ -37,7 +37,9 @@ ROLES_WITH_ALL_DB_FIND_PRIVILEGES = {
     'readWriteAnyDatabase',
     'root'
 }
-STEP_LIMIT = 100000
+STEP_LIMIT = 10000
+# MAX steps to get data per time, others sync next incremental
+MAX_STEPS = 50
 
 
 def do_discover(client, config, limit):
@@ -63,6 +65,9 @@ def do_discover(client, config, limit):
 
             # rediscover selected streams
             database_stream = db_name + "-" + collection_name
+            if selected_stream and len(selected_stream.split("-")) == 3:
+                selected_database, selected_table, selected_subtable = selected_stream.split("-")
+                selected_stream = selected_database + "-" + selected_table
             if selected_stream and selected_stream != database_stream:
                 continue
 
@@ -265,9 +270,12 @@ def produce_collection_schema(collection: Collection, client, limit=None):
         schema_properties = build_schema_for_level(extracted_properties)
 
         # TODO: rowcount for children
+        table_name = schema.get('stream', collection_name)
         mdata = metadata.write(mdata, (), 'row-count', collection.estimated_document_count())
-        if schema.get('parent_id', False):
+
+        if schema.get('object', False) and schema['object'].get('parent_id', False):
             mdata = metadata.write(mdata, (), 'table-key-properties', ['parent_id'])
+            table_name = table_name + "_" + collection_name
 
         for k in schema_properties:
             propertiesBreadcrumb.append({
@@ -276,12 +284,13 @@ def produce_collection_schema(collection: Collection, client, limit=None):
             })
 
         tap_stream_id = "{}-{}".format(collection_db_name, schema.get('stream', collection_name))
-        # if schema.get('stream', False) != collection_name:
-        #     tap_stream_id = "{}-{}-{}".format(collection_db_name, collection_name, schema['stream'])
+        if schema.get('stream', False) != collection_name:
+            tap_stream_id = "{}-{}-{}".format(collection_db_name, collection_name, schema['stream'])
 
         collection_schemas.append({
-            'table_name': collection_name,
+            'table_name': table_name,
             'stream': schema.get('stream', collection_name),
+            'collection': collection_name,
             'metadata': metadata.to_list(mdata) + propertiesBreadcrumb,
             'tap_stream_id': tap_stream_id,
             'schema': {
@@ -325,6 +334,9 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
         limit = sample_size and sample_size or STEP_LIMIT
         steps = int(round(document_count / STEP_LIMIT)) + 1
         logger.info('Total steps - %s', steps)
+        if steps > MAX_STEPS:
+            steps = MAX_STEPS
+            logger.info('Max steps allowed - %s', steps)
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             for i in range(steps):
@@ -341,17 +353,21 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
     extract.post_process_schema(collection_schema)
 
     collection_schema = extract.recursive_default_to_regular_dict(collection_schema)
-    collection_schemas = split_children(collection.name, collection_schema)
+    collection_schemas = split_children(collection.name, collection_schema, sample_size)
     return collection_schemas
 
 
 def scan_documents(cursors, collection_schema, limit, step, steps, total, collection_name):
+    limit_step = limit * step
+    if limit_step < total:
+        limit_step = total
+
     LOGGER.info('Collection %s - Scanning documents: %s/%s - steps %s/%s',
-                collection_name, limit * step, total, step, steps)
+                collection_name, limit_step, total, step, steps)
     try:
         process_cursor(cursors, collection_schema['object'])
         LOGGER.info('Collection %s - Scanned documents: %s/%s - steps %s/%s',
-                    collection_name, limit * step, total, step, steps)
+                    collection_name, limit_step, total, step, steps)
     except Exception as e:
         # cursor might be not found for different reasons (time out, live change, etc)
         LOGGER.info('Error exception: %s', e)
@@ -380,7 +396,7 @@ def process_document(document, schema_object):
     extract.add_document_to_object_schema(document, schema_object)
 
 
-def split_children(stream, collection_schema):
+def split_children(stream, collection_schema, sample_size):
     """
         List of dict schemas: splitted parent-child
     """
@@ -392,13 +408,15 @@ def split_children(stream, collection_schema):
         for k, v in collection_schema['object'].items():
             child = {'count': 0}
             if v.get('type', False) == 'OBJECT':
+
                 child['object'] = v['object']
                 child['object']['parent_id'] = {'type': 'integer'}
                 child['stream'] = k
                 # TODO: add count for children rows
                 # add sub-table as separate schema
-                schemas.append(child)
                 # remove entity from parent
                 parent_object.pop(k)
+                schemas.append(child)
+
     schemas.append(parent_schema)
     return schemas

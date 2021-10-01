@@ -10,7 +10,6 @@ from singer import metadata, utils
 import tap_mongodb.sync_strategies.common as common
 from bson import errors
 
-from pprint import pprint
 LOGGER = singer.get_logger()
 
 
@@ -32,7 +31,8 @@ def sync_collection(client, stream, state, projection):
     database_name = metadata.get(md_map, (), 'database-name')
 
     db = client[database_name]
-    collection = db[stream['collection']]  # stream
+    stream_name = stream.get('collection', False) or stream.get("stream", False)
+    collection = db[stream_name]
 
     #before writing the table version to state, check if we had one to begin with
     first_run = singer.get_bookmark(state, stream['tap_stream_id'], 'version') is None

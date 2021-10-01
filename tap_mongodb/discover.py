@@ -353,8 +353,12 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
 
 
 def scan_documents(cursors, collection_schema, limit, step, steps, total, collection_name):
+    limit_step = limit * step
+    if limit_step < total:
+        limit_step = total
+
     LOGGER.info('Collection %s - Scanning documents: %s/%s - steps %s/%s',
-                collection_name, limit * step, total, step, steps)
+                collection_name, limit_step, total, step, steps)
     try:
         process_cursor(cursors, collection_schema['object'])
         LOGGER.info('Collection %s - Scanned documents: %s/%s - steps %s/%s',

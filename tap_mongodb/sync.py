@@ -11,11 +11,13 @@ import tap_mongodb.sync_strategies.incremental as incremental
 LOGGER = singer.get_logger()
 
 
-def do_sync(client, catalog, state):
+def do_sync(client, catalog, state, selected_stream=None):
     all_streams = catalog['streams']
     streams_to_sync = get_streams_to_sync(all_streams, state)
 
     for stream in streams_to_sync:
+        if selected_stream and not stream.get("stream", False) in selected_stream:
+            continue
         sync_stream(client, stream, state)
 
     LOGGER.info(common.get_sync_summary(catalog))

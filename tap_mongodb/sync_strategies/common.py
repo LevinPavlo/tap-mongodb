@@ -300,6 +300,7 @@ def row_to_schema(schema, row):
 def get_sync_summary(catalog):
     headers = [['database',
                 'collection',
+                'table',
                 'replication method',
                 'total records',
                 'write speed',
@@ -311,7 +312,7 @@ def get_sync_summary(catalog):
     rows = []
     for stream_id, stream_count in COUNTS.items():
         stream = [x for x in catalog['streams'] if x['tap_stream_id'] == stream_id][0]
-        collection_name = stream.get("collection")
+        collection_name = stream.get("collection") or stream.get("stream")
         md_map = metadata.to_map(stream['metadata'])
         db_name = metadata.get(md_map, (), 'database-name')
         replication_method = metadata.get(md_map, (), 'replication-method')
@@ -324,6 +325,7 @@ def get_sync_summary(catalog):
         row = [
             db_name,
             collection_name,
+            stream.get("stream"),
             replication_method,
             '{} records'.format(stream_count),
             '{:.1f} records/second'.format(stream_count/stream_time),

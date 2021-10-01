@@ -13,11 +13,9 @@ LOGGER = singer.get_logger()
 
 def do_sync(client, catalog, state, selected_stream=None):
     all_streams = catalog['streams']
-    streams_to_sync = get_streams_to_sync(all_streams, state)
+    streams_to_sync = get_streams_to_sync(all_streams, state, selected_stream)
 
     for stream in streams_to_sync:
-        if selected_stream and not stream.get("stream", False) in selected_stream:
-            continue
         sync_stream(client, stream, state)
 
     LOGGER.info(common.get_sync_summary(catalog))
@@ -31,13 +29,17 @@ def is_stream_selected(stream):
     return is_selected == True
 
 
-def get_streams_to_sync(streams, state):
+def get_streams_to_sync(streams, state, selected_stream=None):
     # get selected streams
     selected_streams = [s for s in streams if is_stream_selected(s)]
+
     # prioritize streams that have not been processed
     streams_with_state = []
     streams_without_state = []
     for stream in selected_streams:
+        if selected_stream and not stream.get("stream", False) in selected_stream:
+            continue
+
         if state.get('bookmarks', {}).get(stream['tap_stream_id']):
             streams_with_state.append(stream)
         else:
@@ -53,10 +55,8 @@ def get_streams_to_sync(streams, state):
         currently_syncing_stream = list(filter(
             lambda s: s['tap_stream_id'] == currently_syncing,
             ordered_streams))
-        non_currently_syncing_streams = list(filter(lambda s: s['tap_stream_id']
-                                                              != currently_syncing,
-                                                    ordered_streams))
-
+        non_currently_syncing_streams = list(filter(
+            lambda s: s['tap_stream_id'] != currently_syncing, ordered_streams))
         streams_to_sync = currently_syncing_stream + non_currently_syncing_streams
     else:
         streams_to_sync = ordered_streams
@@ -72,15 +72,14 @@ def load_stream_projection(stream):
 
     try:
         stream_projection = json.loads(stream_projection)
-    except:
+    except Exception as e:
         err_msg = "The projection: {} for stream {} is not valid json"
         raise common.InvalidProjectionException(err_msg.format(stream_projection,
                                                                stream['tap_stream_id']))
 
     if stream_projection and stream_projection.get('_id') == 0:
         raise common.InvalidProjectionException(
-            "Projection blacklists key property id for collection {}" \
-                .format(stream['tap_stream_id']))
+            "Projection blacklists key property id for collection {}".format(stream['tap_stream_id']))
 
     return stream_projection
 

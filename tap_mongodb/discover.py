@@ -38,7 +38,7 @@ ROLES_WITH_ALL_DB_FIND_PRIVILEGES = {
     'root'
 }
 STEP_LIMIT = 10000
-# MAX steps to get data per time, others sync next incremental
+# MAX steps to get documents discovered per import
 MAX_STEPS = 50
 
 
@@ -81,10 +81,11 @@ def do_discover(client, config, limit):
             LOGGER.info("Getting collection info for db: %s, collection: %s",
                         db_name, collection_name)
             stream = produce_collection_schema(collection, client, limit)
-            # could return more than one schema per catalog -> parent child splitted
+            # could return more than one schema per catalog -> parent child split
             if stream is not None:
-                streams.extend(stream)
-    return {'streams': streams}
+                yield {'streams': streams}
+                # streams.extend(stream)
+    # return {'streams': streams}
 
 
 def get_databases(client, config):
@@ -347,7 +348,7 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
                                 collection.name)
 
     end_time = time.time() - start_time
-    logger.info('Collection %s scanned for - %s', collection.name, int(round(end_time, 2)))
+    logger.info('Collection %s scanned for - %s seconds', collection.name, int(round(end_time, 2)))
 
     logger.info('Finished scanning documents of collection %s', collection.name)
     extract.post_process_schema(collection_schema)
@@ -359,7 +360,7 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
 
 def scan_documents(cursors, collection_schema, limit, step, steps, total, collection_name):
     limit_step = limit * step
-    if limit_step < total:
+    if limit_step > total:
         limit_step = total
 
     LOGGER.info('Collection %s - Scanning documents: %s/%s - steps %s/%s',
@@ -410,7 +411,7 @@ def split_children(stream, collection_schema, sample_size):
             if v.get('type', False) == 'OBJECT':
 
                 child['object'] = v['object']
-                child['object']['parent_id'] = {'type': 'integer'}
+                child['object']['parent_id'] = {'type': 'string'}  # TODO: get type
                 child['stream'] = k
                 # TODO: add count for children rows
                 # add sub-table as separate schema

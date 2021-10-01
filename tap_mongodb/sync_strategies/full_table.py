@@ -141,7 +141,6 @@ def sync_collection(client, stream, state, projection):
                                       'last_id_fetched_type',
                                       row_id_type)
 
-
         if rows_saved % common.UPDATE_BOOKMARK_PERIOD == 0:
             singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 

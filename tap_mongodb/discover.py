@@ -287,10 +287,11 @@ def produce_collection_schema(collection: Collection, client, limit=None):
         if schema.get('stream', False) != collection_name:
             tap_stream_id = "{}-{}-{}".format(collection_db_name, collection_name, schema['stream'])
 
+        mdata = metadata.write(mdata, (), 'collection', collection_name)
+
         collection_schemas.append({
             'table_name': table_name,
             'stream': schema.get('stream', collection_name),
-            'collection': collection_name,
             'metadata': metadata.to_list(mdata) + propertiesBreadcrumb,
             'tap_stream_id': tap_stream_id,
             'schema': {

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 from tap_mongodb.connection import get_client
 from tap_mongodb.discover import do_discover
-from tap_mongodb.sync import do_sync
+from tap_mongodb.sync import do_sync, get_streams_to_sync
 from tap_mongodb.utils import get_full_catalog
 import tap_mongodb.sync_strategies.common as common
 import tap_mongodb.sync_strategies.full_table as full_table
 import tap_mongodb.sync_strategies.oplog as oplog
 import tap_mongodb.sync_strategies.incremental as incremental
 import singer
-from singer import utils
+from singer import utils, metadata
 import json
 import sys
 
@@ -32,6 +32,7 @@ def main_impl():
         catalog = args.catalog.to_dict()
         # merge dictionaries to get selected streams and replication method
         # full table columns coverage && split parent-child
+        config['filter_collections'] = get_streams_to_rediscover(catalog)
         rediscovered_catalog = do_discover(client, config, limit=None)
         full_catalog = catalog
         selected_streams = None
@@ -42,6 +43,18 @@ def main_impl():
             LOGGER.info(e)
             pass
         do_sync(client, full_catalog, state, selected_streams)
+
+
+def get_streams_to_rediscover(catalog):
+    filtered_collections = set()
+    for stream in get_streams_to_sync(catalog['streams'], {}):
+        collection = metadata.get(metadata.to_map(stream['metadata']), (), 'collection')
+        if not collection:
+            return []  # in order to support older catalogs
+        else:
+            filtered_collections.add(collection)
+
+    return list(filtered_collections)
 
 
 def main():

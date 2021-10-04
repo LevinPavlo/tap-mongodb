@@ -36,7 +36,7 @@ def main_impl():
         full_catalog = catalog
         selected_streams = None
         try:
-            # some overwrite of selected=True in parent-chiled. Pass stream_names to restrict
+            # some overwrite of selected=True in parent-child. Pass stream_names to restrict
             full_catalog, selected_streams = get_full_catalog(catalog, rediscovered_catalog)
         except Exception as e:
             LOGGER.info(e)

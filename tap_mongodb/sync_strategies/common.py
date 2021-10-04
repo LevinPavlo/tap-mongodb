@@ -13,6 +13,8 @@ from terminaltables import AsciiTable
 import pytz
 import tzlocal
 
+logger = singer.get_logger()
+
 INCLUDE_SCHEMAS_IN_DESTINATION_STREAM_NAME = False
 UPDATE_BOOKMARK_PERIOD = 1000
 COUNTS = {}
@@ -20,17 +22,22 @@ TIMES = {}
 SCHEMA_COUNT = {}
 SCHEMA_TIMES = {}
 
+
 class InvalidProjectionException(Exception):
     """Raised if projection blacklists _id"""
+
 
 class UnsupportedReplicationKeyTypeException(Exception):
     """Raised if key type is unsupported"""
 
+
 class MongoAssertionException(Exception):
     """Raised if Mongo exhibits incorrect behavior"""
 
+
 class MongoInvalidDateTimeException(Exception):
     """Raised if we find an invalid date-time that we can't handle"""
+
 
 def calculate_destination_stream_name(stream):
     s_md = metadata.to_map(stream['metadata'])
@@ -38,6 +45,7 @@ def calculate_destination_stream_name(stream):
         return "{}_{}".format(s_md.get((), {}).get('database-name'), stream['stream'])
 
     return stream['stream']
+
 
 def whitelist_bookmark_keys(bookmark_key_set, tap_stream_id, state):
     for bookmark_key in [non_whitelisted_bookmark_key
@@ -54,6 +62,7 @@ def get_stream_version(tap_stream_id, state):
         stream_version = int(time.time() * 1000)
 
     return stream_version
+
 
 def class_to_string(bookmark_value, bookmark_type):
     if bookmark_type == 'datetime':
@@ -95,6 +104,7 @@ def string_to_class(str_value, type_value):
     raise UnsupportedReplicationKeyTypeException("{} is not a supported replication key type"
                                                  .format(type_value))
 
+
 def safe_transform_datetime(value, path):
     timezone = tzlocal.get_localzone()
     try:
@@ -117,6 +127,7 @@ def safe_transform_datetime(value, path):
             ".".join(map(str, path)),
             value))
     return utils.strftime(utc_datetime)
+
 
 # pylint: disable=too-many-return-statements,too-many-branches
 def transform_value(value, path):
@@ -166,11 +177,18 @@ def transform_value(value, path):
 
     return value
 
+
 def row_to_singer_record(stream, row, version, time_extracted):
     # pylint: disable=unidiomatic-typecheck
     try:
-        row_to_persist = {k:transform_value(v, [k]) for k, v in row.items()
-                          if type(v) not in [bson.min_key.MinKey, bson.max_key.MaxKey]}
+        for k, v in row.items():
+            if type(v) not in [bson.min_key.MinKey, bson.max_key.MaxKey]:
+                value = transform_value(v, [k])
+                # already split children from main schema
+                if isinstance(value, dict):
+                    continue
+                row_to_persist = {k: value}
+
     except MongoInvalidDateTimeException as ex:
         raise Exception("Error syncing collection {}, object ID {} - {}".format(stream["tap_stream_id"], row['_id'], ex))
 
@@ -179,6 +197,7 @@ def row_to_singer_record(stream, row, version, time_extracted):
         record=row_to_persist,
         version=version,
         time_extracted=time_extracted)
+
 
 def add_to_any_of(schema, value):
     changed = False
@@ -275,6 +294,7 @@ def add_to_any_of(schema, value):
             schema.insert(-1, list_schema)
     return changed
 
+
 def row_to_schema(schema, row):
     changed = False
 
@@ -296,6 +316,7 @@ def row_to_schema(schema, row):
             changed = add_to_any_of(anyof_schema, value) or changed
 
     return changed
+
 
 def get_sync_summary(catalog):
     headers = [['database',

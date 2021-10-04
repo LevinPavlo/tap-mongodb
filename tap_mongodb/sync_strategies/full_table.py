@@ -76,7 +76,6 @@ def sync_collection(client, stream, state, projection):
                                           stream['tap_stream_id'],
                                           'last_id_fetched')
 
-
     if max_id_value:
         # Write the bookmark if max_id_value is defined
         state = singer.write_bookmark(state,
@@ -140,7 +139,6 @@ def sync_collection(client, stream, state, projection):
                                       stream['tap_stream_id'],
                                       'last_id_fetched_type',
                                       row_id_type)
-
 
         if rows_saved % common.UPDATE_BOOKMARK_PERIOD == 0:
             singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))

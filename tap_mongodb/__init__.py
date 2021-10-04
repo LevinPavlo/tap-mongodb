@@ -32,7 +32,7 @@ def main_impl():
         catalog = args.catalog.to_dict()
         # merge dictionaries to get selected streams and replication method
         # full table columns coverage && split parent-child
-        config['filter_collections'] = get_streams_to_rediscover(catalog)
+        config['filter_collections'] = get_collections_to_rediscover(catalog, config.get("filter_collections", []))
         rediscovered_catalog = do_discover(client, config, limit=None)
         full_catalog = catalog
         selected_streams = None
@@ -45,12 +45,12 @@ def main_impl():
         do_sync(client, full_catalog, state, selected_streams)
 
 
-def get_streams_to_rediscover(catalog):
+def get_collections_to_rediscover(catalog, default_filtered_collections):
     filtered_collections = set()
     for stream in get_streams_to_sync(catalog['streams'], {}):
         collection = metadata.get(metadata.to_map(stream['metadata']), (), 'collection')
         if not collection:
-            return []  # in order to support older catalogs
+            return default_filtered_collections  # in order to support older catalogs
         else:
             filtered_collections.add(collection)
 

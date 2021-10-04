@@ -13,6 +13,8 @@ from terminaltables import AsciiTable
 import pytz
 import tzlocal
 
+logger = singer.get_logger()
+
 INCLUDE_SCHEMAS_IN_DESTINATION_STREAM_NAME = False
 UPDATE_BOOKMARK_PERIOD = 1000
 COUNTS = {}
@@ -179,8 +181,14 @@ def transform_value(value, path):
 def row_to_singer_record(stream, row, version, time_extracted):
     # pylint: disable=unidiomatic-typecheck
     try:
-        row_to_persist = {k: transform_value(v, [k]) for k, v in row.items()
-                          if type(v) not in [bson.min_key.MinKey, bson.max_key.MaxKey]}
+        for k, v in row.items():
+            if type(v) not in [bson.min_key.MinKey, bson.max_key.MaxKey]:
+                value = transform_value(v, [k])
+                # already split children from main schema
+                if isinstance(value, dict):
+                    continue
+                row_to_persist = {k: value}
+
     except MongoInvalidDateTimeException as ex:
         raise Exception("Error syncing collection {}, object ID {} - {}".format(stream["tap_stream_id"], row['_id'], ex))
 

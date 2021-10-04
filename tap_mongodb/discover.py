@@ -83,9 +83,8 @@ def do_discover(client, config, limit):
             stream = produce_collection_schema(collection, client, limit)
             # could return more than one schema per catalog -> parent child split
             if stream is not None:
-                yield {'streams': streams}
-                # streams.extend(stream)
-    # return {'streams': streams}
+                streams.extend(stream)
+    return {'streams': streams}
 
 
 def get_databases(client, config):
@@ -328,7 +327,7 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
     start_time = time.time()
     if sample_size:
         cursors = collection.aggregate([{'$sample': {'size': sample_size}}], allowDiskUse=True)
-        # cursors = collection.aggregate([{'$sample': {'size': { $gt: sample_size}}}], allowDiskUse=True)
+        # cursors = collection.find({"$expr": {'$gte': [{'$size': "$arr"}, sample_size]}})
 
         scan_documents(cursors, collection_schema, sample_size, 1, 1, document_count, collection.name)
     else:
@@ -411,7 +410,7 @@ def split_children(stream, collection_schema, sample_size):
             if v.get('type', False) == 'OBJECT':
 
                 child['object'] = v['object']
-                child['object']['parent_id'] = {'type': 'string'}  # TODO: get type
+                child['object']['parent_id'] = {'type': 'string'}
                 child['stream'] = k
                 # TODO: add count for children rows
                 # add sub-table as separate schema

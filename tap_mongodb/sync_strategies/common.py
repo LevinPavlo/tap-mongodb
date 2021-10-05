@@ -189,8 +189,13 @@ def row_to_singer_record(stream, row, version, time_extracted):
             if type(v) not in [bson.min_key.MinKey, bson.max_key.MaxKey]:
                 value = transform_value(v, [k])
                 # already split children from main schema
+                # skip children keys from parent record
+
                 if isinstance(value, dict):
                     continue
+                if isinstance(value, list):
+                    if any(val for val in value if type(val) == 'dict'):
+                        continue
                 row_to_persist = {k: value}
 
     except MongoInvalidDateTimeException as ex:

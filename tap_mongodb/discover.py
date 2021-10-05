@@ -408,8 +408,18 @@ def split_children(stream, collection_schema, sample_size):
     if parent_object:
         for k, v in collection_schema['object'].items():
             child = {'count': 0}
-            if v.get('type', False) == 'OBJECT':
 
+            if v.get('type', False) == 'OBJECT':
+                child['object'] = v['object']
+                child['object']['parent_id'] = {'type': 'string'}
+                child['stream'] = k
+                # TODO: add count for children rows
+                # add sub-table as separate schema
+                # remove entity from parent
+                parent_object.pop(k)
+                schemas.append(child)
+
+            if v.get('type', False) == 'ARRAY' and v.get('object', False):
                 child['object'] = v['object']
                 child['object']['parent_id'] = {'type': 'string'}
                 child['stream'] = k

@@ -31,7 +31,7 @@ def sync_collection(client, stream, state, projection):
     database_name = metadata.get(md_map, (), 'database-name')
 
     db = client[database_name]
-    stream_name = stream.get('collection', False) or stream.get("stream", False)
+    stream_name = metadata.get(md_map, (), 'collection') or stream.get("stream", False)
     collection = db[stream_name]
 
     #before writing the table version to state, check if we had one to begin with

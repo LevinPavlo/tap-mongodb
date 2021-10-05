@@ -184,6 +184,7 @@ def transform_value(value, path):
 
 def row_to_singer_record(stream, row, version, time_extracted):
     # pylint: disable=unidiomatic-typecheck
+    row_to_persist = {}
     try:
         for k, v in row.items():
             if type(v) not in [bson.min_key.MinKey, bson.max_key.MaxKey]:
@@ -191,7 +192,7 @@ def row_to_singer_record(stream, row, version, time_extracted):
                 # already split children from main schema
                 if isinstance(value, dict):
                     continue
-                row_to_persist = {k: value}
+                row_to_persist[k] = value
 
     except MongoInvalidDateTimeException as ex:
         raise Exception("Error syncing collection {}, object ID {} - {}".format(stream["tap_stream_id"], row['_id'], ex))
@@ -337,8 +338,8 @@ def get_sync_summary(catalog):
     rows = []
     for stream_id, stream_count in COUNTS.items():
         stream = [x for x in catalog['streams'] if x['tap_stream_id'] == stream_id][0]
-        collection_name = stream.get("collection") or stream.get("stream")
         md_map = metadata.to_map(stream['metadata'])
+        collection_name = metadata.get(md_map, (), 'collection') or stream.get("stream")
         db_name = metadata.get(md_map, (), 'database-name')
         replication_method = metadata.get(md_map, (), 'replication-method')
 

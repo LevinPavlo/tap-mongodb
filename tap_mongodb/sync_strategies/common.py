@@ -123,9 +123,13 @@ def safe_transform_datetime(value, path):
                                                                               value.minute,
                                                                               value.second,
                                                                               value.microsecond)
-        raise MongoInvalidDateTimeException("Found invalid datetime at [{}]: {}".format(
-            ".".join(map(str, path)),
-            value))
+
+        if isinstance(ex, OverflowError):
+            utc_datetime = datetime.datetime(value.year, value.month, value.day, tzinfo=pytz.UTC)
+        else:
+            raise MongoInvalidDateTimeException("Found invalid datetime at [{}]: {}".format(
+                ".".join(map(str, path)),
+                value))
     return utils.strftime(utc_datetime)
 
 

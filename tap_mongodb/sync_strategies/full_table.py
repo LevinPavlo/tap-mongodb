@@ -183,9 +183,10 @@ def _find_until_complete(collection, cond, projection, stream, skip=0):
                 if isinstance(row, list):
                     # list of children
                     for child in row:
-                        # add parent foreach child
-                        child['parent_id'] = last_id
-                        yield child
+                        if isinstance(child, dict):
+                            # add parent foreach child
+                            child['parent_id'] = last_id
+                            yield child
                 else:
                     # single row
                     yield row

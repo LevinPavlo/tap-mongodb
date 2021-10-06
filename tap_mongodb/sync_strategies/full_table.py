@@ -115,6 +115,7 @@ def sync_collection(client, stream, state, projection):
         rows_saved += 1
 
         schema_build_start_time = time.time()
+
         if common.row_to_schema(schema, row):
             common.SCHEMA_COUNT[stream['tap_stream_id']] += 1
         common.SCHEMA_TIMES[stream['tap_stream_id']] += time.time() - schema_build_start_time
@@ -181,12 +182,22 @@ def _find_until_complete(collection, cond, projection, stream, last_id=None, ski
                 if collection.name != stream:
                     if row.get(stream, False):
                         child_row = row[stream]
-                        child_row['parent_id'] = last_id
+                        if not isinstance(child_row, list):
+                            # add parent for single child
+                            child_row['parent_id'] = last_id
                         row = child_row
                     else:
                         continue
 
-                yield row
+                if isinstance(row, list):
+                    # list of children
+                    for child in row:
+                        # add parent foreach list of children
+                        child['parent_id'] = last_id
+                        yield child
+                else:
+                    # single row
+                    yield row
             except StopIteration:
                 break
             except errors.InvalidBSON as err:
@@ -199,10 +210,17 @@ def _find_until_complete(collection, cond, projection, stream, last_id=None, ski
             # get child && add parent_id
             if collection.name != stream:
                 if stream in row:
-                    row[stream]['parent_id'] = row.get("_id")
-                    row = row[stream]
+                    child_row = row[stream]
+                    if not isinstance(row, list):
+                        child_row['parent_id'] = row.get("_id")
+                        row = child_row
                 else:
                     continue
-            yield row
+            if isinstance(row, list):
+                for child in row:
+                    child['parent_id'] = row.get("_id")
+                    yield child
+            else:
+                yield row
 
 # https://github.com/yougov/mongo-connector/pull/487/commits/9df97e4083fe4b06aa9569f4a84522bd985a9f30

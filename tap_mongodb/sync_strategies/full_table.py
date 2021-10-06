@@ -163,20 +163,11 @@ def sync_collection(client, stream, state, projection):
     LOGGER.info('Syncd {} records for {}'.format(rows_saved, tap_stream_id))
 
 
-def _find_until_complete(collection, cond, projection, stream, last_id=None, skip=0):
-    has_error = False
-    if last_id is not None:
-        cond["_id"]["$gte"] = last_id
-    with collection.find(
-            cond,
-            projection,
-            sort=[("_id", pymongo.ASCENDING)],
-            skip=skip
-    ) as cursor:
+def _find_until_complete(collection, cond, projection, stream, skip=0):
+    with collection.find(cond, projection, sort=[("_id", pymongo.ASCENDING)]) as cursor:
         while True:
             try:
                 row = next(cursor)
-                skip = 0
                 last_id = row.get("_id")
                 # get child && add parent_id
                 if collection.name != stream:
@@ -192,7 +183,7 @@ def _find_until_complete(collection, cond, projection, stream, last_id=None, ski
                 if isinstance(row, list):
                     # list of children
                     for child in row:
-                        # add parent foreach list of children
+                        # add parent foreach child
                         child['parent_id'] = last_id
                         yield child
                 else:
@@ -201,26 +192,8 @@ def _find_until_complete(collection, cond, projection, stream, last_id=None, ski
             except StopIteration:
                 break
             except errors.InvalidBSON as err:
-                skip += 1
-                has_error = True
-                logging.warning("ignored invalid record ({} after id {}): {}".format(str(skip), last_id, str(err)))
-                break
-    if has_error:
-        for row in _find_until_complete(collection, cond, projection, stream, last_id, skip):
-            # get child && add parent_id
-            if collection.name != stream:
-                if stream in row:
-                    child_row = row[stream]
-                    if not isinstance(row, list):
-                        child_row['parent_id'] = row.get("_id")
-                        row = child_row
-                else:
-                    continue
-            if isinstance(row, list):
-                for child in row:
-                    child['parent_id'] = row.get("_id")
-                    yield child
-            else:
-                yield row
+                # TODO: "year 0 is out of range" is skipped. Format date & sync!
+                logging.warning("ignored invalid record ({}): {}".format(str(skip), str(err)))
+                continue
 
 # https://github.com/yougov/mongo-connector/pull/487/commits/9df97e4083fe4b06aa9569f4a84522bd985a9f30

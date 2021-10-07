@@ -4,11 +4,12 @@ import datetime
 import json
 import logging
 import time
+import bson
 import pymongo
 import singer
 from singer import metadata, utils
 import tap_mongodb.sync_strategies.common as common
-from bson import errors
+from bson import errors, codec_options
 
 LOGGER = singer.get_logger()
 
@@ -163,11 +164,10 @@ def sync_collection(client, stream, state, projection):
     LOGGER.info('Syncd {} records for {}'.format(rows_saved, tap_stream_id))
 
 
-def _find_until_complete(collection, cond, projection, stream, skip=0):
-    with collection.find(cond, projection, sort=[("_id", pymongo.ASCENDING)]) as cursor:
-        while True:
-            try:
-                row = next(cursor)
+def _find_until_complete(collection, cond, projection, stream):
+    with collection.find_raw_batches(cond, projection, sort=[("_id", pymongo.ASCENDING)], batch_size=2 >> 10) as cursor:
+        for batch in cursor:
+            for row in _decode_batch(batch):
                 last_id = row.get("_id")
                 # get child && add parent_id
                 if collection.name != stream:
@@ -186,15 +186,28 @@ def _find_until_complete(collection, cond, projection, stream, skip=0):
                         if isinstance(child, dict):
                             # add parent foreach child
                             child['parent_id'] = last_id
-                            yield child
+                        yield child
                 else:
                     # single row
                     yield row
-            except StopIteration:
-                break
-            except errors.InvalidBSON as err:
-                # TODO: "year 0 is out of range" is skipped. Format date & sync!
-                logging.warning("ignored invalid record ({}): {}".format(str(skip), str(err)))
-                continue
 
-# https://github.com/yougov/mongo-connector/pull/487/commits/9df97e4083fe4b06aa9569f4a84522bd985a9f30
+
+def _decode_batch(batch):
+    """
+    NOTE: This implementation is the same as the bson.decode_iter implementation, with some minor differences.
+
+    This methods decodes a raw bson data batch, and yields dict items for every valid batch item.
+    Batch items that cannot be decoded from their bson format will be skipped.
+    """
+    position = 0
+    end = len(batch) - 1
+    while position < end:
+        obj_size = bson._UNPACK_INT(batch[position:position + 4])[0]
+        elements = batch[position:position + obj_size]
+        position += obj_size
+
+        try:
+            yield bson._bson_to_dict(elements, codec_options.DEFAULT_CODEC_OPTIONS)
+        except bson.InvalidBSON as err:
+            logging.warning("ignored invalid record: {}".format(str(err)))
+            continue

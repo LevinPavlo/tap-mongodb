@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 import base64
 import datetime
+import logging
 import time
 import uuid
 import decimal
 import bson
-from bson import objectid, timestamp, datetime as bson_datetime
+from bson import objectid, timestamp, datetime as bson_datetime, codec_options
 import singer
 from singer import utils, metadata
+from singer.transform import SchemaMismatch
 from terminaltables import AsciiTable
 
 import pytz
@@ -374,3 +376,70 @@ def get_sync_summary(catalog):
     table = AsciiTable(data, title='Sync Summary')
 
     return '\n\n' + table.table
+
+
+def iterate_over_raw_batch_cursor(cursor, schema=None):
+    """
+    Iterates over a raw batch cursor and optionally enforces the schema using singers tranformer.
+    Records that cannot be decoded, or do not conform to the schema will be skipped.
+    """
+    for batch in cursor:
+        for row in _decode_batch(batch):
+            row_id = row.get("_id")
+            try:
+                if schema is not None:
+                    row_items = row.items()
+                    for k, v in row_items:
+                        if isinstance(v, dict) or isinstance(v, list):
+                            row.pop(k, None)
+
+                    transformed_schema = _force_schema_type_mixed_to_string({'schema': schema}).get('schema')
+                    row = singer.Transformer().transform(row, transformed_schema)
+
+                yield row
+            except SchemaMismatch as schema_err:
+                logging.warning("error: schema mismatch for record with id {}. Error: {}. Skipping record.".format(row_id, str(schema_err)))
+                continue
+            except KeyError as key_err:
+                logging.warning("error: key error for record with id {}. Error: {}. Skipping record.".format(row_id, str(key_err)))
+                continue
+
+
+def _decode_batch(batch):
+    """
+    NOTE: This implementation is the same as the bson.decode_iter implementation, with some minor differences.
+
+    This methods decodes a raw bson data batch, and yields dict items for every valid batch item.
+    Batch items that cannot be decoded from their bson format will be skipped.
+    """
+    position = 0
+    end = len(batch) - 1
+    while position < end:
+        obj_size = bson._UNPACK_INT(batch[position:position + 4])[0]
+        elements = batch[position:position + obj_size]
+        position += obj_size
+
+        try:
+            yield bson._bson_to_dict(elements, codec_options.DEFAULT_CODEC_OPTIONS)
+        except bson.InvalidBSON as err:
+            logging.warning("ignored invalid record: {}".format(str(err)))
+            continue
+
+
+def _force_schema_type_mixed_to_string(schema):
+    for k, v in schema.items():
+        if v.get('type'):
+            if v.get('type') == 'object':
+                schema[k]['properties'] = _force_schema_type_mixed_to_string(v.get('properties'))
+
+            elif isinstance(v.get('type'), list):
+                for index, type in enumerate(v.get('type')):
+                    if type == 'mixed':
+                        schema[k].get('type')[index] = 'string'
+                        break
+
+            elif v.get('type') == 'mixed':
+                schema[k]['type'] = 'string'
+
+    return schema
+

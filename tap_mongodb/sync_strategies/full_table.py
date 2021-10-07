@@ -168,53 +168,26 @@ def sync_collection(client, stream, state, projection):
 
 def _find_until_complete(collection, cond, projection, stream, schema):
     with collection.find_raw_batches(cond, projection, sort=[("_id", pymongo.ASCENDING)], batch_size=2 >> 10) as cursor:
-        for batch in cursor:
-            for row in _decode_batch(batch):
-                try:
-                    row = singer.Transformer().transform(row, schema)
-                except SchemaMismatch:
+        for row in common.iterate_over_raw_batch_cursor(cursor, schema):
+            last_id = row.get("_id")
+            # get child && add parent_id
+            if collection.name != stream:
+                if row.get(stream, False):
+                    child_row = row[stream]
+                    if not isinstance(child_row, list):
+                        # add parent for single child
+                        child_row['parent_id'] = last_id
+                    row = child_row
+                else:
                     continue
 
-                last_id = row.get("_id")
-                # get child && add parent_id
-                if collection.name != stream:
-                    if row.get(stream, False):
-                        child_row = row[stream]
-                        if not isinstance(child_row, list):
-                            # add parent for single child
-                            child_row['parent_id'] = last_id
-                        row = child_row
-                    else:
-                        continue
-
-                if isinstance(row, list):
-                    # list of children
-                    for child in row:
-                        if isinstance(child, dict):
-                            # add parent foreach child
-                            child['parent_id'] = last_id
-                        yield child
-                else:
-                    # single row
-                    yield row
-
-
-def _decode_batch(batch):
-    """
-    NOTE: This implementation is the same as the bson.decode_iter implementation, with some minor differences.
-
-    This methods decodes a raw bson data batch, and yields dict items for every valid batch item.
-    Batch items that cannot be decoded from their bson format will be skipped.
-    """
-    position = 0
-    end = len(batch) - 1
-    while position < end:
-        obj_size = bson._UNPACK_INT(batch[position:position + 4])[0]
-        elements = batch[position:position + obj_size]
-        position += obj_size
-
-        try:
-            yield bson._bson_to_dict(elements, codec_options.DEFAULT_CODEC_OPTIONS)
-        except bson.InvalidBSON as err:
-            logging.warning("ignored invalid record: {}".format(str(err)))
-            continue
+            if isinstance(row, list):
+                # list of children
+                for child in row:
+                    if isinstance(child, dict):
+                        # add parent foreach child
+                        child['parent_id'] = last_id
+                    yield child
+            else:
+                # single row
+                yield row

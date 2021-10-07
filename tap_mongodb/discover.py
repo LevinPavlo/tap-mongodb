@@ -11,6 +11,8 @@ from singer import metadata
 from pymongo_schema import extract
 import time
 
+from tap_mongodb.sync_strategies import common
+
 LOGGER = singer.get_logger()
 
 IGNORE_DBS = ['system', 'local', 'config']
@@ -340,10 +342,9 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
         with ThreadPoolExecutor(max_workers=4) as executor:
             for i in range(steps):
                 start = i * limit
-                cursors = collection.find(no_cursor_timeout=True, allow_partial_results=True, skip=start, limit=limit,
-                                          max_time_ms=5000)
-                executor.submit(scan_documents, cursors, collection_schema, STEP_LIMIT, i, steps, document_count,
-                                collection.name)
+                cursors = collection.find_raw_batches(no_cursor_timeout=True, allow_partial_results=True, skip=start, limit=limit,
+                                          max_time_ms=5000, batch_size=2 >> 10)
+                executor.submit(scan_raw_documents, cursors, collection_schema)
 
     end_time = time.time() - start_time
     logger.info('Collection %s scanned for - %s seconds', collection.name, int(round(end_time, 2)))
@@ -371,6 +372,11 @@ def scan_documents(cursors, collection_schema, limit, step, steps, total, collec
         # cursor might be not found for different reasons (time out, live change, etc)
         LOGGER.info('Error exception: %s', e)
         pass
+
+
+def scan_raw_documents(cursor, collection_schema):
+    for row in common.iterate_over_raw_batch_cursor(cursor):
+        process_document(row, collection_schema['object'])
 
 
 def process_cursor(documents, schema_object):

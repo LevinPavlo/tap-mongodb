@@ -8,6 +8,8 @@ import bson
 import pymongo
 import singer
 from singer import metadata, utils
+from singer.transform import SchemaMismatch
+
 import tap_mongodb.sync_strategies.common as common
 from bson import errors, codec_options
 
@@ -112,7 +114,7 @@ def sync_collection(client, stream, state, projection):
     start_time = time.time()
 
     schema = {"type": "object", "properties": {}}
-    for row in _find_until_complete(collection, cond, projection, stream['stream']):
+    for row in _find_until_complete(collection, cond, projection, stream['stream'], stream['schema']):
         rows_saved += 1
 
         schema_build_start_time = time.time()
@@ -164,10 +166,15 @@ def sync_collection(client, stream, state, projection):
     LOGGER.info('Syncd {} records for {}'.format(rows_saved, tap_stream_id))
 
 
-def _find_until_complete(collection, cond, projection, stream):
+def _find_until_complete(collection, cond, projection, stream, schema):
     with collection.find_raw_batches(cond, projection, sort=[("_id", pymongo.ASCENDING)], batch_size=2 >> 10) as cursor:
         for batch in cursor:
             for row in _decode_batch(batch):
+                try:
+                    row = singer.Transformer().transform(row, schema)
+                except SchemaMismatch:
+                    continue
+
                 last_id = row.get("_id")
                 # get child && add parent_id
                 if collection.name != stream:

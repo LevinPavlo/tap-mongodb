@@ -328,8 +328,6 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
     start_time = time.time()
     if sample_size:
         cursors = collection.aggregate([{'$sample': {'size': sample_size}}], allowDiskUse=True)
-        # cursors = collection.find({"$expr": {'$gte': [{'$size': "$arr"}, sample_size]}})
-
         scan_documents(cursors, collection_schema, sample_size, 1, 1, document_count, collection.name)
     else:
         limit = sample_size and sample_size or STEP_LIMIT

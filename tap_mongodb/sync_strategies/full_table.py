@@ -163,7 +163,7 @@ def sync_collection(client, stream, state, projection):
     LOGGER.info('Syncd {} records for {}'.format(rows_saved, tap_stream_id))
 
 
-def _find_until_complete(collection, cond, projection, stream, skip=0):
+def _find_until_complete(collection, cond, projection, stream):
     with collection.find(cond, projection, sort=[("_id", pymongo.ASCENDING)]) as cursor:
         while True:
             try:
@@ -176,6 +176,7 @@ def _find_until_complete(collection, cond, projection, stream, skip=0):
                         if not isinstance(child_row, list):
                             # add parent for single child
                             child_row['parent_id'] = last_id
+
                         row = child_row
                     else:
                         continue
@@ -193,8 +194,7 @@ def _find_until_complete(collection, cond, projection, stream, skip=0):
             except StopIteration:
                 break
             except errors.InvalidBSON as err:
-                # TODO: "year 0 is out of range" is skipped. Format date & sync!
-                logging.warning("ignored invalid record ({}): {}".format(str(skip), str(err)))
+                logging.warning("ignored invalid record {}".format(str(err)))
                 continue
 
 # https://github.com/yougov/mongo-connector/pull/487/commits/9df97e4083fe4b06aa9569f4a84522bd985a9f30

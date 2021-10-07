@@ -111,11 +111,14 @@ def safe_transform_datetime(value, path):
         local_datetime = timezone.localize(value)
         utc_datetime = local_datetime.astimezone(pytz.UTC)
     except Exception as ex:
-        if str(ex) == "year is out of range" and value.year == 0:
-            # NB: Since datetimes are persisted as strings, it doesn't
-            # make sense to blow up on invalid Python datetimes (e.g.,
-            # year=0). In this case we're formatting it as a string and
-            # passing it along down the pipeline.
+        if "year is out of range" in str(ex):
+            # calibrate year value into python datetime limits
+            if value.year < datetime.MINYEAR:
+                value.year = datetime.MINYEAR
+
+            if value.year > datetime.MAXYEAR:
+                value.year = datetime.MAXYEAR
+
             return "{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}.{:06d}Z".format(value.year,
                                                                               value.month,
                                                                               value.day,

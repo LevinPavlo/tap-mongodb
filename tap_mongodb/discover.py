@@ -163,6 +163,12 @@ def build_schema_for_type(type):
             "type": "string"
         }
 
+    if type == 'float' or type == 'integer' or type == "biginteger":
+        return {
+            "inclusion": "available",
+            "type": "number",
+        }
+
     if type == 'date':
         return {
             "inclusion": "available",
@@ -182,17 +188,10 @@ def build_schema_for_type(type):
             "type": ["null", "object"],
         }
 
-    if type == 'float':
-        return {
-            "inclusion": "available",
-            "type": "number",
-        }
-
     if type == "general_scalar":
         return {
             "inclusion": "available",
             "type": ["null", "mixed"],
-
         }
 
     return {

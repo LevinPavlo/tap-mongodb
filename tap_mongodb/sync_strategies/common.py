@@ -388,20 +388,13 @@ def iterate_over_raw_batch_cursor(cursor, schema=None):
             row_id = row.get("_id")
             try:
                 if schema is not None:
-                    row_items = row.items()
-                    for k, v in row_items:
-                        if isinstance(v, dict) or isinstance(v, list):
-                            row.pop(k, None)
-
-                    transformed_schema = _force_schema_type_mixed_to_string({'schema': schema}).get('schema')
-                    row = singer.Transformer().transform(row, transformed_schema)
-
+                    row = _recursive_conform_to_schema(schema, row)
                 yield row
             except SchemaMismatch as schema_err:
-                logging.warning("error: schema mismatch for record with id {}. Error: {}. Skipping record.".format(row_id, str(schema_err)))
+                logging.warning("error: schema mismatch for record with id {}. Skipping record.".format(row_id))
                 continue
             except KeyError as key_err:
-                logging.warning("error: key error for record with id {}. Error: {}. Skipping record.".format(row_id, str(key_err)))
+                logging.warning("error: key error for record with id {}. Skipping record.".format(row_id))
                 continue
 
 
@@ -426,20 +419,88 @@ def _decode_batch(batch):
             continue
 
 
-def _force_schema_type_mixed_to_string(schema):
-    for k, v in schema.items():
-        if v.get('type'):
-            if v.get('type') == 'object':
-                schema[k]['properties'] = _force_schema_type_mixed_to_string(v.get('properties'))
+def _recursive_conform_to_schema(schema_level, row_level):
+    """
+    Adapts the supplied row_level to conform to the schema specified by schema_level.
+    Types that are supplied as arrays are expected to be of the format ["null", "{type}"] and are considered nullable.
+    For other types, a type conversion will be attempted and a default value will be returned if it fails.
+    """
+    level_type = schema_level.get("type")
+    if not level_type:
+        return row_level
 
-            elif isinstance(v.get('type'), list):
-                for index, type in enumerate(v.get('type')):
-                    if type == 'mixed':
-                        schema[k].get('type')[index] = 'string'
-                        break
+    if schema_level.get("format") == "date-time":
+        if not isinstance(row_level, datetime.datetime):
+            return None
+        return row_level
 
-            elif v.get('type') == 'mixed':
-                schema[k]['type'] = 'string'
+    if level_type == "boolean":
+        if row_level is None or not isinstance(row_level, bool):
+            return False
+        return row_level
 
-    return schema
+    if level_type == "integer" or level_type == "biginteger":
+        if row_level is None:
+            return 0
+        if not isinstance(row_level, int):
+            try:
+                return int(row_level)
+            except ValueError:
+                return 0
+        return row_level
+
+    if level_type == "float" or level_type == "number":
+        if row_level is None:
+            return 0.0
+        if not isinstance(row_level, float):
+            try:
+                return float(row_level)
+            except ValueError:
+                return 0.0
+        return row_level
+
+    if level_type == "string" or level_type == "mixed":
+        if row_level is None:
+            return ""
+        if not isinstance(row_level, str):
+            try:
+                return str(row_level)
+            except ValueError:
+                return ""
+        return row_level
+
+    if level_type == "object":
+        if row_level is None:
+            return None
+
+        properties = schema_level.get("properties")
+        record = {}
+        for k, v in row_level.items():
+            if k not in properties:
+                continue
+            record[k] = _recursive_conform_to_schema(properties.get(k), v)
+
+        # fill default values for missing required fields
+        for k, v in properties.items():
+            if k not in record:
+                default_val = _recursive_conform_to_schema(v, None)
+                if default_val is not None:
+                    record[k] = default_val
+        return record
+
+    if level_type == "array":
+        # we aren't currently outputting schema info for arrays atm
+        # just checking root type if it is a list
+        if row_level is None or not isinstance(row_level, list):
+            return None
+        return row_level
+
+    if isinstance(level_type, list):
+        if row_level is None:
+            return
+
+        level_type = [t for t in level_type if t != "null"][0]
+        return _recursive_conform_to_schema({"type": level_type}, row_level)
+
+    return row_level
 

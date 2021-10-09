@@ -342,7 +342,7 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
             for i in range(steps):
                 start = i * limit
                 cursors = collection.find_raw_batches(no_cursor_timeout=True, allow_partial_results=True, skip=start, limit=limit,
-                                          max_time_ms=5000, batch_size=2 >> 10)
+                                          max_time_ms=5000)
                 executor.submit(scan_raw_documents, cursors, collection_schema)
 
     end_time = time.time() - start_time

@@ -167,27 +167,24 @@ def sync_collection(client, stream, state, projection):
 
 
 def _find_until_complete(collection, cond, projection, stream, schema):
-    with collection.find_raw_batches(cond, projection, sort=[("_id", pymongo.ASCENDING)], batch_size=2 >> 10) as cursor:
-        for row in common.iterate_over_raw_batch_cursor(cursor, schema):
-            last_id = row.get("_id")
-            # get child && add parent_id
+    with collection.find_raw_batches(cond, projection, sort=[("_id", pymongo.ASCENDING)]) as cursor:
+        for row in common.iterate_over_raw_batch_cursor(cursor):
+            row_id = row.get("_id")
+
+            # child streams
             if collection.name != stream:
-                if row.get(stream, False):
-                    child_row = row[stream]
-                    if not isinstance(child_row, list):
-                        # add parent for single child
-                        child_row['parent_id'] = last_id
-                    row = child_row
-                else:
+                if not row.get(stream, False):
                     continue
 
-            if isinstance(row, list):
-                # list of children
-                for child in row:
-                    if isinstance(child, dict):
-                        # add parent foreach child
-                        child['parent_id'] = last_id
-                    yield child
+                child_row = row[stream]
+                if isinstance(child_row, dict):
+                    child_row['parent_id'] = row_id
+                    yield common.recursive_conform_to_schema(schema, child_row)
+
+                elif isinstance(child_row, list):
+                    for child in child_row:
+                        if isinstance(child, dict):
+                            child['parent_id'] = row_id
+                            yield common.recursive_conform_to_schema(schema, child)
             else:
-                # single row
-                yield row
+                yield common.recursive_conform_to_schema(schema, row)

@@ -380,22 +380,11 @@ def get_sync_summary(catalog):
 
 def iterate_over_raw_batch_cursor(cursor, schema=None):
     """
-    Iterates over a raw batch cursor and optionally enforces the schema using singers tranformer.
-    Records that cannot be decoded, or do not conform to the schema will be skipped.
+    Iterates over a raw batch cursor and yields the decoded values for each record.
     """
     for batch in cursor:
         for row in _decode_batch(batch):
-            row_id = row.get("_id")
-            try:
-                if schema is not None:
-                    row = _recursive_conform_to_schema(schema, row)
-                yield row
-            except SchemaMismatch as schema_err:
-                logging.warning("error: schema mismatch for record with id {}. Skipping record.".format(row_id))
-                continue
-            except KeyError as key_err:
-                logging.warning("error: key error for record with id {}. Skipping record.".format(row_id))
-                continue
+            yield row
 
 
 def _decode_batch(batch):
@@ -419,7 +408,7 @@ def _decode_batch(batch):
             continue
 
 
-def _recursive_conform_to_schema(schema_level, row_level):
+def recursive_conform_to_schema(schema_level, row_level):
     """
     Adapts the supplied row_level to conform to the schema specified by schema_level.
     Types that are supplied as arrays are expected to be of the format ["null", "{type}"] and are considered nullable.
@@ -470,20 +459,20 @@ def _recursive_conform_to_schema(schema_level, row_level):
         return row_level
 
     if level_type == "object":
-        if row_level is None:
+        properties = schema_level.get("properties")
+        if row_level is None or properties is None:
             return None
 
-        properties = schema_level.get("properties")
         record = {}
         for k, v in row_level.items():
             if k not in properties:
                 continue
-            record[k] = _recursive_conform_to_schema(properties.get(k), v)
+            record[k] = recursive_conform_to_schema(properties.get(k), v)
 
         # fill default values for missing required fields
         for k, v in properties.items():
             if k not in record:
-                default_val = _recursive_conform_to_schema(v, None)
+                default_val = recursive_conform_to_schema(v, None)
                 if default_val is not None:
                     record[k] = default_val
         return record
@@ -500,7 +489,7 @@ def _recursive_conform_to_schema(schema_level, row_level):
             return
 
         level_type = [t for t in level_type if t != "null"][0]
-        return _recursive_conform_to_schema({"type": level_type}, row_level)
+        return recursive_conform_to_schema({"type": level_type}, row_level)
 
     return row_level
 

@@ -194,14 +194,6 @@ def row_to_singer_record(stream, row, version, time_extracted):
         for k, v in row.items():
             if type(v) not in [bson.min_key.MinKey, bson.max_key.MaxKey]:
                 value = transform_value(v, [k])
-                # already split children from main schema
-                # skip children keys from parent record
-
-                if isinstance(value, dict):
-                    continue
-                if isinstance(value, list):
-                    if any(val for val in value if type(val) == dict):
-                        continue
                 row_to_persist[k] = value
 
     except MongoInvalidDateTimeException as ex:
@@ -461,7 +453,7 @@ def recursive_conform_to_schema(schema_level, row_level):
     if level_type == "object":
         properties = schema_level.get("properties")
         if row_level is None or properties is None:
-            return None
+            return row_level
 
         record = {}
         for k, v in row_level.items():

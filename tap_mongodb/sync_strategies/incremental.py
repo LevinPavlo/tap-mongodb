@@ -35,7 +35,7 @@ def sync_collection(client, stream, state, projection):
 
     stream_metadata = metadata.to_map(stream['metadata']).get(())
     LOGGER.info("Metadata object: '%s'", stream_metadata)
-    collection = client[stream_metadata['database-name']][metadata.get(stream_metadata, (), 'collection')]
+    collection = client[stream_metadata['database-name']][stream_metadata['collection']]
 
     # before writing the table version to state, check if we had one to begin with
     first_run = singer.get_bookmark(state, stream['tap_stream_id'], 'version') is None

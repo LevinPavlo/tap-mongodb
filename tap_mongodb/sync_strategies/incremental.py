@@ -34,6 +34,7 @@ def sync_collection(client, stream, state, projection):
     LOGGER.info('Starting incremental sync for %s', tap_stream_id)
 
     stream_metadata = metadata.to_map(stream['metadata']).get(())
+    LOGGER.info("Metadata object: '%s'", stream_metadata)
     collection = client[stream_metadata['database-name']][metadata.get(stream_metadata, (), 'collection')]
 
     # before writing the table version to state, check if we had one to begin with

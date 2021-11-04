@@ -86,6 +86,8 @@ def class_to_string(bookmark_value, bookmark_type):
 def string_to_class(str_value, type_value):
     if type_value == 'UUID':
         return uuid.UUID(str_value)
+    if type_value == 'ObjectId':
+        return objectid.ObjectId(str_value)
     if type_value == 'datetime':
         return singer.utils.strptime_with_tz(str_value)
     if type_value == 'int':
@@ -94,8 +96,6 @@ def string_to_class(str_value, type_value):
         return bson.int64.Int64(str_value)
     if type_value == 'float':
         return float(str_value)
-    if type_value == 'ObjectId':
-        return objectid.ObjectId(str_value)
     if type_value == 'Timestamp':
         split_value = str_value.split('.')
         return bson.timestamp.Timestamp(int(split_value[0]), int(split_value[1]))

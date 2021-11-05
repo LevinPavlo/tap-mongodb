@@ -4,14 +4,14 @@ import datetime
 import json
 import logging
 import time
+
 import bson
 import pymongo
 import singer
+import tap_mongodb.sync_strategies.common as common
+from bson import codec_options, errors
 from singer import metadata, utils
 from singer.transform import SchemaMismatch
-
-import tap_mongodb.sync_strategies.common as common
-from bson import errors, codec_options
 
 LOGGER = singer.get_logger()
 
@@ -183,8 +183,9 @@ def _find_until_complete(collection, cond, projection, stream, schema):
                 if isinstance(child_row, dict):
                     try:
                         child_row['parent_id'] = bson.objectid.ObjectId(row_id)
+                        LOGGER.info("'%s' transformed in '%s'", row_id, child_row['parent_id'].__class__.__name__)
                     except:
-                        child['parent_id'] = row_id
+                        child_row['parent_id'] = row_id
                     yield common.recursive_conform_to_schema(schema, child_row)
 
                 elif isinstance(child_row, list):

@@ -133,7 +133,7 @@ def sync_collection(client, stream, state, projection):
         # child entities might not have '_id'
         row_id = row.get('_id', False) or row.get('parent_id', False)
         if "parent_id" in row.keys():
-            row_id_type = row.get('parent_id', False) and row.get('parent_id').__class__.__name__ or 'ObjectId'
+            row_id_type = row.get('parent_id', False) and 'ObjectId'
         else:
             row_id_type = row.get('_id', False) and row.get('_id').__class__.__name__ or 'int'
 

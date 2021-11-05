@@ -183,7 +183,6 @@ def _find_until_complete(collection, cond, projection, stream, schema):
                 if isinstance(child_row, dict):
                     try:
                         child_row['parent_id'] = bson.objectid.ObjectId(row_id)
-                        LOGGER.info("'%s' transformed in '%s'", row_id, child_row['parent_id'].__class__.__name__)
                     except:
                         child_row['parent_id'] = row_id
                     yield common.recursive_conform_to_schema(schema, child_row)

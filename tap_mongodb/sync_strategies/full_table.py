@@ -181,13 +181,19 @@ def _find_until_complete(collection, cond, projection, stream, schema):
 
                 child_row = row[stream]
                 if isinstance(child_row, dict):
-                    child_row['parent_id'] = row_id
+                    try:
+                        child_row['parent_id'] = bson.objectid.ObjectId(row_id)
+                    except:
+                        child['parent_id'] = row_id
                     yield common.recursive_conform_to_schema(schema, child_row)
 
                 elif isinstance(child_row, list):
                     for child in child_row:
                         if isinstance(child, dict):
-                            child['parent_id'] = row_id
+                            try:
+                                child['parent_id'] = bson.objectid.ObjectId(row_id)
+                            except:
+                                child['parent_id'] = row_id
                             yield common.recursive_conform_to_schema(schema, child)
             else:
                 yield common.recursive_conform_to_schema(schema, row)

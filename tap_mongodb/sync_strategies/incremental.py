@@ -132,7 +132,7 @@ def sync_collection(client, stream, state, projection):
                     wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)
                 elif isinstance(child_row, list):
                     for child in child_row:
-                        child_row["parent_id"] = bson.objectid.ObjectId(row_id)
+                        child["parent_id"] = bson.objectid.ObjectId(row_id)
                         key_properties=['parent_id']
                         row = common.recursive_conform_to_schema(schema, child)
                         wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)

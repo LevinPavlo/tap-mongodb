@@ -2,11 +2,13 @@
 import copy
 import logging
 import time
+
+import bson
 import pymongo
 import singer
-from singer import metadata, utils
-from bson import errors
 import tap_mongodb.sync_strategies.common as common
+from bson import errors
+from singer import metadata, utils
 
 LOGGER = singer.get_logger()
 
@@ -27,6 +29,16 @@ def update_bookmark(row, state, tap_stream_id, replication_key_name):
                                       'replication_key_type',
                                       replication_key_type)
 
+
+def wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time):
+    if common.row_to_schema(schema, row):
+        singer.write_message(singer.SchemaMessage(
+            stream=common.calculate_destination_stream_name(stream),
+            schema=schema,
+            # TODO: - child might not have an '_id', user parent_id instead
+            key_properties=key_properties))
+        common.SCHEMA_COUNT[tap_stream_id] += 1
+    common.SCHEMA_TIMES[tap_stream_id] += time.time() - schema_build_start_time
 
 # pylint: disable=too-many-locals, too-many-statements
 def sync_collection(client, stream, state, projection):
@@ -101,27 +113,27 @@ def sync_collection(client, stream, state, projection):
         while True:
             try:
                 row = next(cursor)
-                if collection.name != stream['stream']:
-                    row = row[stream['stream']]
-                    key_properties=['parent_id']
-                else:
-                    key_properties=['_id']
             except StopIteration:
                 break
             except errors.InvalidBSON as err:
                 logging.warning("ignored invalid record: {}".format(str(err)))
                 continue
             schema_build_start_time = time.time()
-
-            if common.row_to_schema(schema, row):
-                singer.write_message(singer.SchemaMessage(
-                    stream=common.calculate_destination_stream_name(stream),
-                    schema=schema,
-                    # TODO: - child might not have an '_id', user parent_id instead
-                    key_properties=key_properties))
-                common.SCHEMA_COUNT[tap_stream_id] += 1
-            common.SCHEMA_TIMES[tap_stream_id] += time.time() - schema_build_start_time
-
+            row_id = row.get("_id")
+            if collection.name != stream['stream']:
+                child_row = row[stream['stream']] 
+                if isinstance(child_row, dict):
+                    child_row["parent_id"] = bson.objectid.ObjectId(row_id)
+                    key_properties=['parent_id']
+                    wrap_row(schema, child_row, stream, key_properties, tap_stream_id, schema_build_start_time)
+                elif isinstance(child_row, list):
+                    for child in child_row:
+                        child_row["parent_id"] = bson.objectid.ObjectId(row_id)
+                        key_properties=['parent_id']
+                        wrap_row(schema, child, stream, key_properties, tap_stream_id, schema_build_start_time)
+            else:
+                key_properties=['_id']
+                wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)
 
             record_message = common.row_to_singer_record(stream,
                                                          row,

@@ -101,8 +101,8 @@ def sync_collection(client, stream, state, projection):
         while True:
             try:
                 row = next(cursor)
-                if collection.name != stream:
-                    row = row[stream]
+                if collection.name != stream['stream']:
+                    row = row[stream['stream']]
                     key_properties=['parent_id']
                 else:
                     key_properties=['_id']

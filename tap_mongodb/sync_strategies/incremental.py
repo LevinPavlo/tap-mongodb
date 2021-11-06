@@ -84,7 +84,6 @@ def sync_collection(client, stream, state, projection):
         find_filter[replication_key_name]['$gte'] = \
             common.string_to_class(replication_key_value_bookmark,
                                    stream_state.get('replication_key_type'))
-
     # log query
     query_message = 'Querying {} with:\n\tFind Parameters: {}'.format(tap_stream_id, find_filter)
     if projection:
@@ -102,18 +101,24 @@ def sync_collection(client, stream, state, projection):
         while True:
             try:
                 row = next(cursor)
+                if collection.name != stream:
+                    row = row[stream]
+                    key_properties=['parent_id']
+                else:
+                    key_properties=['_id']
             except StopIteration:
                 break
             except errors.InvalidBSON as err:
                 logging.warning("ignored invalid record: {}".format(str(err)))
                 continue
             schema_build_start_time = time.time()
+
             if common.row_to_schema(schema, row):
                 singer.write_message(singer.SchemaMessage(
                     stream=common.calculate_destination_stream_name(stream),
                     schema=schema,
                     # TODO: - child might not have an '_id', user parent_id instead
-                    key_properties=['_id']))
+                    key_properties=key_properties))
                 common.SCHEMA_COUNT[tap_stream_id] += 1
             common.SCHEMA_TIMES[tap_stream_id] += time.time() - schema_build_start_time
 

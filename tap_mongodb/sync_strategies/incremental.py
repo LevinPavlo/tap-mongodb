@@ -121,16 +121,21 @@ def sync_collection(client, stream, state, projection):
             schema_build_start_time = time.time()
             row_id = row.get("_id")
             if collection.name != stream['stream']:
+                if not row.get(stream['stream'], False):
+                    continue
                 child_row = row[stream['stream']] 
+
                 if isinstance(child_row, dict):
                     child_row["parent_id"] = bson.objectid.ObjectId(row_id)
                     key_properties=['parent_id']
-                    wrap_row(schema, child_row, stream, key_properties, tap_stream_id, schema_build_start_time)
+                    row = common.recursive_conform_to_schema(schema, child_row)
+                    wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)
                 elif isinstance(child_row, list):
                     for child in child_row:
                         child_row["parent_id"] = bson.objectid.ObjectId(row_id)
                         key_properties=['parent_id']
-                        wrap_row(schema, child, stream, key_properties, tap_stream_id, schema_build_start_time)
+                        row = common.recursive_conform_to_schema(schema, child)
+                        wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)
             else:
                 key_properties=['_id']
                 wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)

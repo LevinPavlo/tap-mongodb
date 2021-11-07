@@ -139,7 +139,7 @@ def sync_collection(client, stream, state, projection):
             else:
                 key_properties=['_id']
                 wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)
-
+            LOGGER.info("Row object is: '%s'", row)
             record_message = common.row_to_singer_record(stream,
                                                          row,
                                                          stream_version,

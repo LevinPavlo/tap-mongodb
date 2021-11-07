@@ -14,9 +14,14 @@ LOGGER = singer.get_logger()
 
 
 def update_bookmark(row, state, tap_stream_id, replication_key_name):
+    if row.get("parent_id", False):
+        replication_key_name = "parent_id"
     replication_key_value = row.get(replication_key_name)
     if replication_key_value:
-        replication_key_type = replication_key_value.__class__.__name__
+        if replication_key_name == "parent_id":
+            replication_key_type = "ObjectId"
+        else:
+            replication_key_type = replication_key_value.__class__.__name__
 
         replication_key_value_bookmark = common.class_to_string(replication_key_value,
                                                                 replication_key_type)

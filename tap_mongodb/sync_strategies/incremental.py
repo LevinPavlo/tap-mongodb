@@ -133,20 +133,17 @@ def sync_collection(client, stream, state, projection):
                 if isinstance(child_row, dict):
                     child_row["parent_id"] = bson.objectid.ObjectId(row_id)
                     key_properties=['parent_id']
-                    LOGGER.info("Child row is '%s'", child_row)
                     row = common.recursive_conform_to_schema(stream['schema'], child_row)
                     wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)
                 elif isinstance(child_row, list):
                     for child in child_row:
                         child["parent_id"] = bson.objectid.ObjectId(row_id)
                         key_properties=['parent_id']
-                        LOGGER.info("Child row is '%s'", child_row)
                         row = common.recursive_conform_to_schema(stream['schema'], child)
                         wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)
             else:
                 key_properties=['_id']
                 wrap_row(schema, row, stream, key_properties, tap_stream_id, schema_build_start_time)
-            LOGGER.info("Row sended: '%s'", row)
             record_message = common.row_to_singer_record(stream,
                                                          row,
                                                          stream_version,

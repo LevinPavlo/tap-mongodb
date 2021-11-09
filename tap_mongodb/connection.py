@@ -14,7 +14,6 @@ REQUIRED_CONFIG_KEYS = ["host", "port", "user", "password", "database"]
 
 def get_client(args, config) -> pymongo.MongoClient:
     try:
-        LOGGER.info("Config that inputs get_client function: %s", config)
         return check_connection(args, config)
     except Exception as e:
         raise Exception("Could not connect to client! ", e)
@@ -23,8 +22,6 @@ def get_client(args, config) -> pymongo.MongoClient:
 def create_client(
     connection_params: Union[Dict, str], connection_args: Dict, connection_config: Dict
 ) -> pymongo.MongoClient:
-    LOGGER.info("Config in create_client func: %s", connection_config)
-    LOGGER.info("Args in create_client func: %s", connection_args)
     if isinstance(connection_params, dict):
         LOGGER.info("Params to connection: %s", connection_params)
         client = pymongo.MongoClient(**connection_params)

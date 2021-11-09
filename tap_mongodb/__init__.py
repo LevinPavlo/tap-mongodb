@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 import singer
-from singer import metadata, utils
+from singer import metadata
 from sshtunnel import SSHTunnelForwarder
 
 import tap_mongodb.sync_strategies.common as common
@@ -51,7 +51,7 @@ def main_impl():
     )
 
     if args.discover:
-        catalog = do_discover(client, config, limit=1000)
+        catalog = do_discover(client, config, limit=10000)
         json.dump(catalog, sys.stdout, indent=2)
     else:
         state = args.state or {}

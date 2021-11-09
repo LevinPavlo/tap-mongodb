@@ -31,6 +31,7 @@ def choose_connection_type(func):
                 remote_bind_address=(CONFIG.get("host"), 27017),
             )
             with SSHTunnelForwarder(**ssh_params) as ssh:
+                ssh.start()
                 CONFIG["ssh_local_bind_port"] = ssh.local_bind_port
                 func()
         else:

@@ -60,9 +60,6 @@ def check_connection(args, config):
         )
         return create_client(config["connection_uri"])
     else:
-        # Connect using the connection parameters
-        args = utils.parse_args(REQUIRED_CONFIG_KEYS)
-        config = args.config
 
         # Default SSL verify mode to true, give option to disable
         verify_mode = config.get("verify_mode", "true") == "true"

@@ -33,6 +33,7 @@ def choose_connection_type(func):
             with SSHTunnelForwarder(**ssh_params) as ssh:
                 ssh.start()
                 CONFIG["ssh_local_bind_port"] = ssh.local_bind_port
+                LOGGER.info("Config after adding ssh local bind port: %s", CONFIG)
                 func()
         else:
             func()

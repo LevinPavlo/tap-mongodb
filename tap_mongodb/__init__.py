@@ -17,7 +17,7 @@ from tap_mongodb.sync import do_sync, get_streams_to_sync
 from tap_mongodb.utils import get_full_catalog
 
 LOGGER = singer.get_logger()
-ARGS = utils.parse_args([])
+ARGS = singer.utils.parse_args([])
 CONFIG = ARGS.config
 
 

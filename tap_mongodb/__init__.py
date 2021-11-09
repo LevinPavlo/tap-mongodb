@@ -23,12 +23,12 @@ CONFIG = ARGS.config
 
 def choose_connection_type(func):
     def choose():
-        if CONFIG.ssh == "true":
+        if CONFIG.get("ssh") == "true":
             ssh_params = dict(
-                ssh_address_or_host=CONFIG.ssh_host,
-                ssh_username=CONFIG.ssh_username,
+                ssh_address_or_host=CONFIG.get("ssh_host"),
+                ssh_username=CONFIG.get("ssh_username"),
                 ssh_pkey=(str(Path.home().joinpath(".ssh").joinpath("id_rsa"))),
-                remote_bind_address=(CONFIG.host, 27017),
+                remote_bind_address=(CONFIG.get("host"), 27017),
             )
             with SSHTunnelForwarder(**ssh_params):
                 func()

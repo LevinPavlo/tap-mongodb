@@ -30,7 +30,8 @@ def choose_connection_type(func):
                 ssh_pkey=(str(Path.home().joinpath(".ssh").joinpath("id_rsa"))),
                 remote_bind_address=(CONFIG.get("host"), 27017),
             )
-            with SSHTunnelForwarder(**ssh_params):
+            with SSHTunnelForwarder(**ssh_params) as ssh:
+                CONFIG["ssh_local_bind_port"] = ssh.local_bind_port
                 func()
         else:
             func()

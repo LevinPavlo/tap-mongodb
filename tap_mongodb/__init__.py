@@ -23,7 +23,7 @@ CONFIG = ARGS.config
 
 def choose_connection_type(func):
     def choose():
-        if CONFIG.get("ssh") == "true":
+        if CONFIG.get("ssh") == True:
             ssh_params = dict(
                 ssh_address_or_host=CONFIG.get("ssh_host"),
                 ssh_username=CONFIG.get("ssh_username"),

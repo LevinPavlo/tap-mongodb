@@ -352,8 +352,8 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
     extract.post_process_schema(collection_schema)
 
     collection_schema = extract.recursive_default_to_regular_dict(collection_schema)
-    collection_schemas = split_children(collection.name, collection_schema, sample_size)
-    return collection_schemas
+    # collection_schemas = split_children(collection.name, collection_schema, sample_size)
+    return collection_schema
 
 
 def scan_documents(cursors, collection_schema, limit, step, steps, total, collection_name):

@@ -23,7 +23,6 @@ def create_client(
     connection_params: Union[Dict, str], connection_args: Dict, connection_config: Dict
 ) -> pymongo.MongoClient:
     if isinstance(connection_params, dict):
-        LOGGER.info("Params to connection: %s", connection_params)
         client = pymongo.MongoClient(**connection_params)
         LOGGER.info(
             "Connected to MongoDB host: %s, version: %s",

@@ -421,6 +421,7 @@ def split_children(stream, collection_schema, sample_size):
                 # TODO: add count for children rows
                 # add sub-table as separate schema
                 # remove entity from parent
+                parent_object.pop(k)
                 schemas.append(child)
 
             if v.get('type', False) == 'ARRAY' and v.get('object', False):
@@ -430,6 +431,7 @@ def split_children(stream, collection_schema, sample_size):
                 # TODO: add count for children rows
                 # add sub-table as separate schema
                 # remove entity from parent
+                parent_object.pop(k)
                 schemas.append(child)
 
     schemas.append(parent_schema)

@@ -49,6 +49,7 @@ def do_discover(client, config, limit):
     db_name = config.get("database")
     selected_stream = config.get("import")
     filter_collections = config.get("filter_collections", [])
+    LOGGER.info("Collections to filter: %s", filter_collections)
 
     if db_name == "admin":
         databases = get_databases(client, config)

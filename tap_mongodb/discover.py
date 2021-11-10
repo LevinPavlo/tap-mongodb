@@ -45,6 +45,7 @@ MAX_STEPS = 50
 
 
 def do_discover(client, config, limit):
+    LOGGER.info("Config in do_discover: %s", config)
     streams = []
     db_name = config.get("database")
     selected_stream = config.get("import")

@@ -355,7 +355,7 @@ def _fault_tolerant_extract_collection_schema(collection: Collection, sample_siz
     collection_schema = extract.recursive_default_to_regular_dict(collection_schema)
     collection_schema["stream"] = collection.name
     collection_schemas = split_children(collection.name, collection_schema, sample_size)
-    return [collection_schema]
+    return collection_schemas
 
 
 def scan_documents(cursors, collection_schema, limit, step, steps, total, collection_name):
@@ -421,7 +421,6 @@ def split_children(stream, collection_schema, sample_size):
                 # TODO: add count for children rows
                 # add sub-table as separate schema
                 # remove entity from parent
-                parent_object.pop(k)
                 schemas.append(child)
 
             if v.get('type', False) == 'ARRAY' and v.get('object', False):
@@ -431,7 +430,6 @@ def split_children(stream, collection_schema, sample_size):
                 # TODO: add count for children rows
                 # add sub-table as separate schema
                 # remove entity from parent
-                parent_object.pop(k)
                 schemas.append(child)
 
     schemas.append(parent_schema)

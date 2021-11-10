@@ -64,6 +64,7 @@ def do_discover(client, config, limit):
         for collection_name in collection_names:
             if collection_name.startswith("system.") or (
                     filter_collections and collection_name not in filter_collections):
+                LOGGER.info("%s collection filtered", collection_name)
                 continue
 
             # rediscover selected streams

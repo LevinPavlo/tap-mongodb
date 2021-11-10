@@ -266,6 +266,7 @@ def produce_collection_schema(collection: Collection, client, limit=None):
             mdata = metadata.write(mdata, (), 'valid-replication-keys', valid_replication_keys)
 
     for schema in schemas:
+        LOGGER.info("schema extracted have type %s and value %s", type(schema), schema)
         propertiesBreadcrumb = []
         extracted_properties = schema['object']
         schema_properties = build_schema_for_level(extracted_properties)

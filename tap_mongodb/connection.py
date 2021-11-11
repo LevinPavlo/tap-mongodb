@@ -66,7 +66,7 @@ def check_connection(args, config):
 
         connection_params = {
             "host": config["host"],
-            "port": config.get("ssh_local_bind_port", False),
+            "port": config.get("ssh_local_bind_port", False) or config.get("port"),
             "username": config.get("user", None),
             "password": config.get("password", None),
             "authSource": config["database"],

@@ -14,7 +14,8 @@ LOGGER = singer.get_logger()
 def do_sync(client, catalog, state, selected_stream=None):
     all_streams = catalog['streams']
     streams_to_sync = get_streams_to_sync(all_streams, state, selected_stream)
-
+    LOGGER.info("State: %s", state)
+    LOGGER.info("Streams to syc: %s", streams_to_sync)
     for stream in streams_to_sync:
         sync_stream(client, stream, state)
 

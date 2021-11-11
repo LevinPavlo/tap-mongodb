@@ -87,10 +87,15 @@ def sync_collection(client, stream, state, projection):
 
     # TODO: child case - increment with parent_id
     if not replication_key_name:
+        LOGGER.info("No replication key in metadata")
         # repliacation_key_name = '_id'
         # replication_key_value_bookmark['replication_key_name'] = replication_key_name
-        return []
-
+        valid_replication_keys = stream_metadata.get("valid-replication-keys")
+        if "_id" in valid_replication_keys:
+            replication_key_name = "_id"
+            LOGGER.info("Setted replication key name to _id")
+        else:
+            return []
     # write state message
     singer.write_message(singer.StateMessage(value=copy.deepcopy(state)))
 
